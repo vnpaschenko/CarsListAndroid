@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Cars List</string>
+    <string name="toggle_flash_description">Toggle flash</string>
+</resources>
