@@ -32,6 +32,7 @@ internal class CameraV2PreviewManager(activity: Activity, textureView: TextureVi
 
     override val previewSize: Size
     override val flashSupported: Boolean
+    override val cameraOrientation: Int
 
     private val mTextureView = textureView
     private val mEventListener = listener
@@ -61,6 +62,7 @@ internal class CameraV2PreviewManager(activity: Activity, textureView: TextureVi
         var selectedPreviewSize: Size? = null
         var selectedCameraId: String? = null
         var isFlashSupported: Boolean? = null
+        var orientation: Int? = null
 
         for (cameraId in mCameraManager.cameraIdList) {
             val characteristics = mCameraManager.getCameraCharacteristics(cameraId)
@@ -81,11 +83,9 @@ internal class CameraV2PreviewManager(activity: Activity, textureView: TextureVi
             isFlashSupported =
                     characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE)
 
-            //val orientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION)
+            orientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION)
 
             selectedCameraId = cameraId
-
-
 
             // We've found a viable camera and finished setting up member variables,
             // so we don't need to iterate through other available cameras.
@@ -98,6 +98,7 @@ internal class CameraV2PreviewManager(activity: Activity, textureView: TextureVi
             mCameraId = selectedCameraId
             previewSize = selectedPreviewSize!!
             flashSupported =  isFlashSupported ?: false
+            cameraOrientation = orientation ?: 90 // usually 90
         }
     }
 
