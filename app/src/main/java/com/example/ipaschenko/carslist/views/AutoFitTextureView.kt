@@ -56,12 +56,10 @@ class AutoFitTextureView @JvmOverloads constructor(
         if (ratioWidth == 0 || ratioHeight == 0) {
             setMeasuredDimension(width, height)
         } else {
-            if (width < height * ratioWidth / ratioHeight) {
-                setMeasuredDimension(width, width * ratioHeight / ratioWidth)
-            } else {
-                setMeasuredDimension(height * ratioWidth / ratioHeight, height)
-            }
+            val scaleX = width / ratioWidth.toFloat()
+            val scaleY = height / ratioHeight.toFloat()
+            val scale = Math.max(scaleX, scaleY)
+            setMeasuredDimension((ratioWidth * scale).toInt(), (ratioHeight * scale).toInt())
         }
     }
-
 }
