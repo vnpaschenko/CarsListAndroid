@@ -1,6 +1,7 @@
 package com.example.ipaschenko.carslist.camera
 
 import android.app.Activity
+import android.graphics.ImageFormat
 import android.support.annotation.MainThread
 import android.support.annotation.WorkerThread
 import android.util.Size
@@ -10,6 +11,9 @@ import com.example.ipaschenko.carslist.utils.Cancellable
 /**
  * Captures preview from the camera and notifies event listener
  */
+
+class CameraPreviewSettings(val imageFormat: Int, val maxPreviewSize: Int) {}
+
 interface CameraPreviewManager {
 
     interface CameraPreviewManagerEventListener {
@@ -39,9 +43,11 @@ interface CameraPreviewManager {
         /**
          * Preview manager factory method
          */
-        fun newPreviewManager(activity: Activity, textureView: TextureView,
-                listener: CameraPreviewManagerEventListener): CameraPreviewManager {
-            return CameraV2PreviewManager(activity, textureView, listener)
+        fun newPreviewManager(settings: CameraPreviewSettings, activity: Activity,
+                textureView: TextureView, listener: CameraPreviewManagerEventListener):
+                CameraPreviewManager {
+
+            return CameraV2PreviewManager(settings, activity, textureView, listener)
         }
     }
 

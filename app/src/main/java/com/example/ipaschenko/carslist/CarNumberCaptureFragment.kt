@@ -1,28 +1,40 @@
 package com.example.ipaschenko.carslist
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.graphics.ImageFormat
 import android.graphics.Matrix
 import android.graphics.RectF
 import android.graphics.SurfaceTexture
 import android.os.Bundle
+import android.os.SystemClock
 import android.support.v4.app.Fragment
 import android.support.v4.content.ContextCompat
 import android.view.*
 import com.example.ipaschenko.carslist.camera.CameraPreviewManager
+import com.example.ipaschenko.carslist.camera.CameraPreviewSettings
 import com.example.ipaschenko.carslist.utils.Cancellable
 import com.example.ipaschenko.carslist.views.AutoFitTextureView
 import com.example.ipaschenko.carslist.views.applyRoundOutline
+import com.google.android.gms.vision.Detector
+import com.google.android.gms.vision.Frame
+import com.google.android.gms.vision.text.TextBlock
+import com.google.android.gms.vision.text.TextRecognizer
+import java.lang.ref.WeakReference
+import java.nio.ByteBuffer
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  *
  */
-class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
-        CameraPreviewManager.CameraPreviewManagerEventListener {
+class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
 
     private lateinit var mTextureView: AutoFitTextureView
     private lateinit var mToggleFlashButton: View
     private var mPreviewManager: CameraPreviewManager? = null
+    private val mFrameRotation = AtomicInteger(0)
 
     companion object {
         private const val CAMERA_PERMISSION_REQUEST = 2018
@@ -77,13 +89,34 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
     }
 
     private fun startPreviewManager(viewWidth: Int, viewHeight: Int) {
-        mPreviewManager = CameraPreviewManager.newPreviewManager(activity!!, mTextureView, this)
+        val settings = CameraPreviewSettings(ImageFormat.NV21, 1024 * 768) // 1280x720?
+
+        mPreviewManager = CameraPreviewManager.newPreviewManager(settings, activity!!, mTextureView,
+                CameraEventListener(this))
+
         transformSurface(viewWidth, viewHeight)
 
         mToggleFlashButton.visibility =
                 if (mPreviewManager!!.flashSupported) View.VISIBLE else View.GONE
 
-        mPreviewManager?.start()
+        applyRotation()
+        mPreviewManager!!.start()
+    }
+
+    private fun applyRotation() {
+        val windowManager = context?.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+
+        var degrees = 0
+        val rotation = windowManager.defaultDisplay.rotation
+        when (rotation) {
+            Surface.ROTATION_0 -> degrees = 0
+            Surface.ROTATION_90 -> degrees = 90
+            Surface.ROTATION_180 -> degrees = 180
+            Surface.ROTATION_270 -> degrees = 270
+        }
+
+        val angle = (mPreviewManager!!.cameraOrientation + degrees) % 360
+        mFrameRotation.set(angle / 90)
     }
 
     private fun requestCameraPermission() {
@@ -111,11 +144,11 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
         val previewWidth = mPreviewManager?.previewSize?.width ?: viewWidth
         val previewHeight = mPreviewManager?.previewSize?.height ?: viewHeight
 
-//        if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
-//            mTextureView.setAspectRatio(previewWidth, previewHeight)
-//        } else {
-//            mTextureView.setAspectRatio(previewHeight, previewWidth)
-//        }
+        if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            mTextureView.setAspectRatio(previewWidth, previewHeight)
+        } else {
+            mTextureView.setAspectRatio(previewHeight, previewWidth)
+        }
 
         val rotation = activity!!.windowManager.defaultDisplay.rotation
         val matrix = Matrix()
@@ -158,16 +191,51 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
 
     override fun onSurfaceTextureDestroyed(surface: SurfaceTexture?): Boolean = true
 
+
     // ---------------------------------------------------------------------------------------------
-    // CameraPreviewManager.CameraPreviewManagerEventListener implementation
-    override fun onCameraPreviewObtained(imageData: ByteArray, width: Int, height: Int,
-            imageFormat: Int, cancellable: Cancellable) {
+    // CameraPreviewManager.CameraPreviewManagerEventListener
+    private class CameraEventListener(parent: CarNumberCaptureFragment):
+            CameraPreviewManager.CameraPreviewManagerEventListener,
+            Detector.Processor<TextBlock> {
 
-        val i = 1
+        private val mParentRef = WeakReference<CarNumberCaptureFragment>(parent)
+        private val mRecognizer = TextRecognizer.Builder(parent.context).build()
+        private var mStartTime = SystemClock.elapsedRealtime()
+        private var mFrameId = 0
 
+        init {
+            mRecognizer.setProcessor(this)
+        }
+
+        override fun onCameraPreviewObtained(imageData: ByteArray, width: Int, height: Int,
+                    imageFormat: Int, cancellable: Cancellable) {
+
+            val parent = mParentRef.get()
+            parent ?: return
+
+            val buffer = ByteBuffer.wrap(imageData, 0, imageData.size)
+
+            val frame = Frame.Builder()
+                    .setImageData(buffer, width, height, imageFormat)
+                    .setId(mFrameId++)
+                    .setTimestampMillis(SystemClock.elapsedRealtime() - mStartTime)
+                    .setRotation(parent.mFrameRotation.get())
+                    .build()
+            mRecognizer.receiveFrame(frame)
+        }
+
+        override fun onCameraPreviewError(error: Throwable) {
+
+        }
+
+        override fun release() {
+
+        }
+
+        override fun receiveDetections(detections: Detector.Detections<TextBlock>?) {
+            val items = detections?.detectedItems
+
+        }
     }
 
-    override fun onCameraPreviewError(error: Throwable) {
-        // TODO handle error
-    }
 }

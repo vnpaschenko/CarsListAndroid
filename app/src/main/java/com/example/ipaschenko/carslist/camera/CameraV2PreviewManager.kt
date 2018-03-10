@@ -22,18 +22,15 @@ import java.util.concurrent.TimeUnit
 /**
  * CameraPreviewManager based on camera v2 API
  */
-internal class CameraV2PreviewManager(activity: Activity, textureView: TextureView,
-        listener: CameraPreviewManager.CameraPreviewManagerEventListener): CameraPreviewManager {
-
-    companion object {
-        private const val IMAGE_FORMAT = ImageFormat.YUV_420_888
-        private const val MAX_PREVIEW_SIZE = 1024 * 768 // 1280x720?
-    }
+internal class CameraV2PreviewManager(settings: CameraPreviewSettings, activity: Activity,
+        textureView: TextureView, listener: CameraPreviewManager.CameraPreviewManagerEventListener):
+        CameraPreviewManager {
 
     override val previewSize: Size
     override val flashSupported: Boolean
     override val cameraOrientation: Int
 
+    private val mSettings = settings
     private val mTextureView = textureView
     private val mEventListener = listener
 
@@ -77,7 +74,8 @@ internal class CameraV2PreviewManager(activity: Activity, textureView: TextureVi
             val map = characteristics.get(
                     CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: continue
 
-            selectedPreviewSize = getBestPreviewSize(map.getOutputSizes(IMAGE_FORMAT)) ?: continue
+            selectedPreviewSize = getBestPreviewSize(map.getOutputSizes(mSettings.imageFormat)) ?:
+                    continue
 
             // Check if the flash is supported.
             isFlashSupported =
@@ -105,9 +103,8 @@ internal class CameraV2PreviewManager(activity: Activity, textureView: TextureVi
     private fun getBestPreviewSize(supportedSizes: Array<Size>?): Size? {
 
         return supportedSizes?.asList()?.sortedByDescending { it.width * it.height }?.first {
-            it.width * it.height <= MAX_PREVIEW_SIZE
+            it.width * it.height <= mSettings.maxPreviewSize
         }
-
     }
 
     @MainThread
@@ -216,7 +213,8 @@ internal class CameraV2PreviewManager(activity: Activity, textureView: TextureVi
 
         // Init image reader
         val imageReader = ImageReader.newInstance(previewSize.width, previewSize.height,
-                IMAGE_FORMAT, 2)
+                mSettings.imageFormat, 2)
+
         imageReader.setOnImageAvailableListener(ImageAvailableListener(cancellationToken,
                 mEventListener), null)
 
@@ -361,6 +359,5 @@ internal class CameraV2PreviewManager(activity: Activity, textureView: TextureVi
             buffer.get(mBytes!!)
             mFrameProcessor.process(mBytes!!, width, height, image.format)
          }
-
     }
 }
