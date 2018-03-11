@@ -4,16 +4,20 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.ImageFormat
+import android.graphics.Rect
 import android.graphics.SurfaceTexture
 import android.os.Bundle
+import android.os.Handler
 import android.os.SystemClock
 import android.support.v4.app.Fragment
 import android.support.v4.content.ContextCompat
+import android.text.TextUtils
 import android.util.Size
 import android.view.*
 import com.example.ipaschenko.carslist.camera.CameraPreviewManager
 import com.example.ipaschenko.carslist.camera.CameraPreviewSettings
 import com.example.ipaschenko.carslist.utils.Cancellable
+import com.example.ipaschenko.carslist.utils.canContinue
 import com.example.ipaschenko.carslist.views.AutoFitTextureView
 import com.example.ipaschenko.carslist.views.applyRoundOutline
 import com.google.android.gms.vision.Detector
@@ -22,7 +26,6 @@ import com.google.android.gms.vision.text.TextBlock
 import com.google.android.gms.vision.text.TextRecognizer
 import java.lang.ref.WeakReference
 import java.nio.ByteBuffer
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
  *
@@ -135,6 +138,14 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
         }
     }
 
+    private fun displayDetections(detections: Collection<Detection>) {
+
+    }
+
+    private fun clearDetections() {
+
+    }
+
     // ---------------------------------------------------------------------------------------------
     // TextureView.SurfaceTextureListener implementation
     override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture?, width: Int, height: Int) {
@@ -150,6 +161,8 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
     override fun onSurfaceTextureDestroyed(surface: SurfaceTexture?): Boolean = true
 
 
+    private class Detection(val text: String, val boundingBox: Rect?) {}
+
     // ---------------------------------------------------------------------------------------------
     // CameraPreviewManager.CameraPreviewManagerEventListener
     private class CameraEventListener(parent: CarNumberCaptureFragment):
@@ -160,6 +173,9 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
         private val mRecognizer = TextRecognizer.Builder(parent.context).build()
         private var mStartTime = SystemClock.elapsedRealtime()
         private var mFrameId = 0
+        private var mCancellable: Cancellable? = null
+        private val mHandler = Handler()
+        private var mLastDetectionsCount = 0
 
         init {
             mRecognizer.setProcessor(this)
@@ -167,6 +183,8 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
 
         override fun onCameraPreviewObtained(imageData: ByteArray, imageSize: Size, imageFormat: Int,
                 frameRotation: Int, cancellable: Cancellable) {
+
+            mCancellable = cancellable
 
             val parent = mParentRef.get()
             parent ?: return
@@ -187,13 +205,68 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
         }
 
         override fun release() {
+            if (!mCancellable.canContinue()) {
+                return
+            }
+            mLastDetectionsCount = 0
 
+            val cancellable = mCancellable
+            mHandler.post {
+                if (cancellable.canContinue()) {
+                    val parent = mParentRef.get()
+                    if (parent != null) {
+                        parent.clearDetections()
+                    }
+                }
+            }
         }
 
         override fun receiveDetections(detections: Detector.Detections<TextBlock>?) {
+
+            if (!mCancellable.canContinue()) {
+                return
+            }
+
             val items = detections?.detectedItems
+            val count = items?.size() ?: 0
+
+            // Don't sequentaly report 0
+            if (count == 0 && mLastDetectionsCount == 0) {
+                return
+            }
+            mLastDetectionsCount = count
+
+            val detections = ArrayList<Detection>(count)
+            for (i in 0 until count) {
+                val block = items!![i]
+                val text = block?.value
+
+                if (!TextUtils.isEmpty(text)) {
+                    detections.add(Detection(text!!, block.boundingBox))
+                }
+            }
+
+
+            // Post display detections
+            val cancellable = mCancellable
+            mHandler.post {
+                if (cancellable.canContinue()) {
+                    val parent = mParentRef.get()
+                    if (parent != null) {
+                        parent.displayDetections(detections)
+                    }
+                }
+            }
+
+            for (detection in detections) {
+                processText(detection.text)
+            }
+        }
+
+        private fun processText(text: String) {
 
         }
+
     }
 
 }
