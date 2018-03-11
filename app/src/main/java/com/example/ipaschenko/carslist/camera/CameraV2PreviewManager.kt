@@ -23,12 +23,11 @@ import java.util.concurrent.TimeUnit
  * CameraPreviewManager based on camera v2 API
  */
 internal class CameraV2PreviewManager(settings: CameraPreviewSettings, activity: Activity,
-        textureView: TextureView, listener: CameraPreviewManager.CameraPreviewManagerEventListener):
-        CameraPreviewManager {
+        textureView: TextureView, listener: CameraPreviewManager.CameraPreviewManagerEventListener) {
 
-    override val previewSize: Size
-    override val flashSupported: Boolean
-    override val cameraOrientation: Int
+    val previewSize: Size
+    val flashSupported: Boolean
+    val cameraOrientation: Int
 
     private val mSettings = settings
     private val mTextureView = textureView
@@ -108,7 +107,7 @@ internal class CameraV2PreviewManager(settings: CameraPreviewSettings, activity:
     }
 
     @MainThread
-    override fun start() {
+    fun start() {
         if (mRunning) {
             return
         }
@@ -140,7 +139,7 @@ internal class CameraV2PreviewManager(settings: CameraPreviewSettings, activity:
     }
 
     @MainThread
-    override fun stop() {
+    fun stop() {
         if (mRunning) {
             val handlerThread = mBackgroundThread
             mCancellationToken?.cancel()
@@ -160,7 +159,7 @@ internal class CameraV2PreviewManager(settings: CameraPreviewSettings, activity:
     }
 
     @MainThread
-    override fun toggleFlash() {
+    fun toggleFlash() {
         if (mRunning && flashSupported) {
             val cancellationToken = mCancellationToken
             mBackgroundHandler?.post {
@@ -357,7 +356,48 @@ internal class CameraV2PreviewManager(settings: CameraPreviewSettings, activity:
             }
 
             buffer.get(mBytes!!)
-            mFrameProcessor.process(mBytes!!, width, height, image.format)
+            mFrameProcessor.process(mBytes!!, Size(width, height), image.format, 0)
          }
     }
 }
+
+/*
+    private fun transformSurface(viewWidth: Int, viewHeight: Int) {
+        activity ?: return
+
+        val previewWidth = mPreviewManager?.previewSize?.width ?: viewWidth
+        val previewHeight = mPreviewManager?.previewSize?.height ?: viewHeight
+
+        if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            mTextureView.setAspectRatio(previewWidth, previewHeight)
+        } else {
+            mTextureView.setAspectRatio(previewHeight, previewWidth)
+        }
+
+        val rotation = activity!!.windowManager.defaultDisplay.rotation
+        val matrix = Matrix()
+        val viewRect = RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
+        val bufferRect = RectF(0f, 0f, previewHeight.toFloat(),
+                previewWidth.toFloat())
+
+        val centerX = viewRect.centerX()
+        val centerY = viewRect.centerY()
+
+        if (Surface.ROTATION_90 == rotation || Surface.ROTATION_270 == rotation) {
+            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
+
+            val scale = Math.max(viewHeight.toFloat() / previewHeight,
+                    viewWidth.toFloat() / previewWidth)
+
+            with(matrix) {
+                setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
+                postScale(scale, scale, centerX, centerY)
+                postRotate((90 * (rotation - 2)).toFloat(), centerX, centerY)
+            }
+        } else if (Surface.ROTATION_180 == rotation) {
+            matrix.postRotate(180f, centerX, centerY)
+        }
+
+        mTextureView.setTransform(matrix)
+    }
+    */

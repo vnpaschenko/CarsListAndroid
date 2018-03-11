@@ -1,4 +1,7 @@
 <resources>
     <string name="app_name">Cars List</string>
     <string name="toggle_flash_description">Toggle flash</string>
+    <string name="hint_text">Point the camera to the car number</string>
+    <string name="got_it_button_title">Got it</string>
+
 </resources>

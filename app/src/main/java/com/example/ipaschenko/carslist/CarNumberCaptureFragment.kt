@@ -5,18 +5,23 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.ImageFormat
-import android.graphics.Matrix
-import android.graphics.RectF
+import android.graphics.Point
+import android.graphics.Rect
 import android.graphics.SurfaceTexture
 import android.os.Bundle
+import android.os.Handler
 import android.os.SystemClock
 import android.support.v4.app.Fragment
 import android.support.v4.content.ContextCompat
+import android.text.TextUtils
+import android.util.Size
 import android.view.*
 import com.example.ipaschenko.carslist.camera.CameraPreviewManager
 import com.example.ipaschenko.carslist.camera.CameraPreviewSettings
 import com.example.ipaschenko.carslist.utils.Cancellable
+import com.example.ipaschenko.carslist.utils.canContinue
 import com.example.ipaschenko.carslist.views.AutoFitTextureView
+import com.example.ipaschenko.carslist.views.OverlayView
 import com.example.ipaschenko.carslist.views.applyRoundOutline
 import com.google.android.gms.vision.Detector
 import com.google.android.gms.vision.Frame
@@ -24,7 +29,15 @@ import com.google.android.gms.vision.text.TextBlock
 import com.google.android.gms.vision.text.TextRecognizer
 import java.lang.ref.WeakReference
 import java.nio.ByteBuffer
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.*
+
+
+const val SHARED_PREFS_NAME = "CarsListPrefs"
+
+/**
+ * Represents text detection
+ */
+class Detection(val text: String, val boundingBox: Rect?) {}
 
 /**
  *
@@ -32,12 +45,20 @@ import java.util.concurrent.atomic.AtomicInteger
 class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
 
     private lateinit var mTextureView: AutoFitTextureView
+    private lateinit var mOverlay: OverlayView
+
     private lateinit var mToggleFlashButton: View
     private var mPreviewManager: CameraPreviewManager? = null
-    private val mFrameRotation = AtomicInteger(0)
+
+    private var mHintView: View? = null
+    private var mHideHintButton: View? = null
+
+    private val isHintDisplayed: Boolean
+        get() = mHideHintButton != null
 
     companion object {
         private const val CAMERA_PERMISSION_REQUEST = 2018
+        private const val SKIP_HINT_KEY = "CarNumberCaptureFragment-SkipHint"
 
         @JvmStatic
         fun newInstance(): CarNumberCaptureFragment = CarNumberCaptureFragment()
@@ -60,12 +81,31 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
             }
         }
         mToggleFlashButton.visibility = View.GONE
+
+        mOverlay = view.findViewById(R.id.overlay)
+        mTextureView.addOnLayoutChangeListener { _, left, top, _, _, _, _, _, _ ->
+            mOverlay.startPoint = Point(left, top)
+
+        }
+
+        // Show hint ?
+        if (context?.getSharedPreferences(SHARED_PREFS_NAME, Context.MODE_PRIVATE)
+                ?.getBoolean(SKIP_HINT_KEY, false) != true) {
+            mHintView = view.findViewById(R.id.hint_view)
+            mHideHintButton = mHintView?.findViewById(R.id.hint_hide_button)
+            mHintView?.visibility = View.VISIBLE
+            mHideHintButton?.setOnClickListener {
+                hideHintView(null)
+            }
+
+            mOverlay.visibility = View.GONE
+        }
     }
 
     override fun onResume() {
         super.onResume()
         if (mTextureView.isAvailable) {
-            startPreview(mTextureView.width, mTextureView.height)
+            startPreview()
         } else {
             mTextureView.surfaceTextureListener = this
         }
@@ -77,46 +117,53 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
         mPreviewManager = null
     }
 
-    private fun startPreview(viewWidth: Int, viewHeight: Int) {
+    private fun startPreview() {
         activity ?: return
 
         val permission = ContextCompat.checkSelfPermission(activity!!, Manifest.permission.CAMERA)
         if (permission != PackageManager.PERMISSION_GRANTED) {
             requestCameraPermission()
         } else {
-            startPreviewManager(viewWidth, viewHeight)
+            startPreviewManager()
         }
     }
 
-    private fun startPreviewManager(viewWidth: Int, viewHeight: Int) {
+    private fun startPreviewManager() {
         val settings = CameraPreviewSettings(ImageFormat.NV21, 1024 * 768) // 1280x720?
 
-        mPreviewManager = CameraPreviewManager.newPreviewManager(settings, activity!!, mTextureView,
-                CameraEventListener(this))
+        mToggleFlashButton.visibility = View.GONE
 
-        transformSurface(viewWidth, viewHeight)
+        mPreviewManager = CameraPreviewManager.newPreviewManager(settings)
+        val listener = CameraEventListener(this)
 
-        mToggleFlashButton.visibility =
-                if (mPreviewManager!!.flashSupported) View.VISIBLE else View.GONE
+        try {
 
-        applyRotation()
-        mPreviewManager!!.start()
-    }
+            mPreviewManager!!.start(context!!, false, mTextureView, listener,
+            { previewSize, flashStatus ->
 
-    private fun applyRotation() {
-        val windowManager = context?.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                    mTextureView.setAspectRatio(previewSize.width, previewSize.height)
+                } else {
+                    mTextureView.setAspectRatio(previewSize.height, previewSize.width)
+                }
 
-        var degrees = 0
-        val rotation = windowManager.defaultDisplay.rotation
-        when (rotation) {
-            Surface.ROTATION_0 -> degrees = 0
-            Surface.ROTATION_90 -> degrees = 90
-            Surface.ROTATION_180 -> degrees = 180
-            Surface.ROTATION_270 -> degrees = 270
+                if (mHideHintButton != null) {
+                    mHideHintButton!!.setOnClickListener {
+                        hideHintView(flashStatus)
+                    }
+                } else if (flashStatus != null) {
+                    mToggleFlashButton.visibility = View.VISIBLE
+                    mToggleFlashButton.isSelected = flashStatus
+                }
+
+                mOverlay.previewSize = previewSize
+
+            })
+        } catch (e: Throwable) {
+            mPreviewManager = null
+            listener.onCameraPreviewError(e)
         }
 
-        val angle = (mPreviewManager!!.cameraOrientation + degrees) % 360
-        mFrameRotation.set(angle / 90)
     }
 
     private fun requestCameraPermission() {
@@ -131,60 +178,48 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
                 // Todo: Show some error dialog
                 activity?.finish()
             } else {
-                activity?.apply{ startPreviewManager(mTextureView.width, mTextureView.height) }
+                activity?.apply{ startPreviewManager() }
             }
         } else {
             super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         }
     }
 
-    private fun transformSurface(viewWidth: Int, viewHeight: Int) {
-        activity ?: return
+    private fun displayDetections(detections: Collection<Detection>) {
+        mOverlay.drawDetections(detections)
+    }
 
-        val previewWidth = mPreviewManager?.previewSize?.width ?: viewWidth
-        val previewHeight = mPreviewManager?.previewSize?.height ?: viewHeight
+    private fun clearDetections() {
+        mOverlay.drawDetections(null)
+    }
 
-        if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
-            mTextureView.setAspectRatio(previewWidth, previewHeight)
-        } else {
-            mTextureView.setAspectRatio(previewHeight, previewWidth)
+    private fun hideHintView(flashStatus: Boolean?) {
+
+        mHideHintButton = mHintView?.findViewById(R.id.hint_hide_button)
+        mHintView?.visibility = View.GONE
+        mHideHintButton?.setOnClickListener(null)
+        mHintView = null
+        mHideHintButton = null
+
+        mOverlay.visibility = View.VISIBLE
+
+        if (flashStatus != null) {
+            mToggleFlashButton.visibility = View.VISIBLE
+            mToggleFlashButton.isSelected = flashStatus
         }
 
-        val rotation = activity!!.windowManager.defaultDisplay.rotation
-        val matrix = Matrix()
-        val viewRect = RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
-        val bufferRect = RectF(0f, 0f, previewHeight.toFloat(),
-                previewWidth.toFloat())
-
-        val centerX = viewRect.centerX()
-        val centerY = viewRect.centerY()
-
-        if (Surface.ROTATION_90 == rotation || Surface.ROTATION_270 == rotation) {
-            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
-
-            val scale = Math.max(viewHeight.toFloat() / previewHeight,
-                    viewWidth.toFloat() / previewWidth)
-
-            with(matrix) {
-                setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
-                postScale(scale, scale, centerX, centerY)
-                postRotate((90 * (rotation - 2)).toFloat(), centerX, centerY)
-            }
-        } else if (Surface.ROTATION_180 == rotation) {
-            matrix.postRotate(180f, centerX, centerY)
-        }
-
-        mTextureView.setTransform(matrix)
+        context?.getSharedPreferences(SHARED_PREFS_NAME, Context.MODE_PRIVATE)?.edit()?.
+                putBoolean(SKIP_HINT_KEY, true)?.apply()
     }
 
     // ---------------------------------------------------------------------------------------------
     // TextureView.SurfaceTextureListener implementation
     override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture?, width: Int, height: Int) {
-        transformSurface(width, height)
+        //transformSurface(width, height)
     }
 
     override fun onSurfaceTextureAvailable(surface: SurfaceTexture?, width: Int, height: Int) {
-        startPreview(width, height)
+        startPreview()
     }
 
     override fun onSurfaceTextureUpdated(surface: SurfaceTexture?) = Unit
@@ -202,13 +237,18 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
         private val mRecognizer = TextRecognizer.Builder(parent.context).build()
         private var mStartTime = SystemClock.elapsedRealtime()
         private var mFrameId = 0
+        private var mCancellable: Cancellable? = null
+        private val mHandler = Handler()
+        private var mLastDetectionsCount = 0
 
         init {
             mRecognizer.setProcessor(this)
         }
 
-        override fun onCameraPreviewObtained(imageData: ByteArray, width: Int, height: Int,
-                    imageFormat: Int, cancellable: Cancellable) {
+        override fun onCameraPreviewObtained(imageData: ByteArray, imageSize: Size, imageFormat: Int,
+                frameRotation: Int, cancellable: Cancellable) {
+
+            mCancellable = cancellable
 
             val parent = mParentRef.get()
             parent ?: return
@@ -216,10 +256,10 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
             val buffer = ByteBuffer.wrap(imageData, 0, imageData.size)
 
             val frame = Frame.Builder()
-                    .setImageData(buffer, width, height, imageFormat)
+                    .setImageData(buffer, imageSize.width, imageSize.height, imageFormat)
                     .setId(mFrameId++)
                     .setTimestampMillis(SystemClock.elapsedRealtime() - mStartTime)
-                    .setRotation(parent.mFrameRotation.get())
+                    .setRotation(frameRotation)
                     .build()
             mRecognizer.receiveFrame(frame)
         }
@@ -229,13 +269,68 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
         }
 
         override fun release() {
+            if (!mCancellable.canContinue()) {
+                return
+            }
+            mLastDetectionsCount = 0
 
+            val cancellable = mCancellable
+            mHandler.post {
+                if (cancellable.canContinue()) {
+                    val parent = mParentRef.get()
+                    if (parent != null) {
+                        parent.clearDetections()
+                    }
+                }
+            }
         }
 
         override fun receiveDetections(detections: Detector.Detections<TextBlock>?) {
+
+            if (!mCancellable.canContinue()) {
+                return
+            }
+
             val items = detections?.detectedItems
+            val count = items?.size() ?: 0
+
+            // Don't sequentaly report 0
+            if (count == 0 && mLastDetectionsCount == 0) {
+                return
+            }
+            mLastDetectionsCount = count
+
+            val detectionsList = ArrayList<Detection>(count)
+            for (i in 0 until count) {
+                val block = items!![i]
+                val text = block?.value
+
+                if (!TextUtils.isEmpty(text)) {
+                    detectionsList.add(Detection(text!!, block.boundingBox))
+                }
+            }
+
+
+            // Post display detections
+            val cancellable = mCancellable
+            mHandler.post {
+                if (cancellable.canContinue()) {
+                    val parent = mParentRef.get()
+                    if (parent != null) {
+                        parent.displayDetections(Collections.unmodifiableCollection(detectionsList))
+                    }
+                }
+            }
+
+            for (detection in detectionsList) {
+                processText(detection.text)
+            }
+        }
+
+        private fun processText(text: String) {
 
         }
+
     }
 
 }
