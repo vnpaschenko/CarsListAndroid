@@ -8,4 +8,7 @@
     <color name="colorButtonLightBackground">#77000000</color>
     <color name="colorButtonLightBackgroundStroke">#FFFFFF</color>
     <color name="colorButtonLightBackgroundRipple">#AA000000</color>
+
+    <color name="colorViewHintBackground">#99000000</color>
+
 </resources>

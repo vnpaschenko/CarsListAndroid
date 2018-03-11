@@ -30,4 +30,6 @@
         android:clipToPadding="false"
         />
 
+    <include layout="@layout/view_hint"/>
+
 </FrameLayout>

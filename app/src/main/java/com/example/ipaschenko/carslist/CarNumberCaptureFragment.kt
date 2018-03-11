@@ -1,6 +1,7 @@
 package com.example.ipaschenko.carslist
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.ImageFormat
@@ -31,6 +32,8 @@ import java.nio.ByteBuffer
 import java.util.*
 
 
+const val SHARED_PREFS_NAME = "CarsListPrefs"
+
 /**
  * Represents text detection
  */
@@ -47,8 +50,15 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
     private lateinit var mToggleFlashButton: View
     private var mPreviewManager: CameraPreviewManager? = null
 
+    private var mHintView: View? = null
+    private var mHideHintButton: View? = null
+
+    private val isHintDisplayed: Boolean
+        get() = mHideHintButton != null
+
     companion object {
         private const val CAMERA_PERMISSION_REQUEST = 2018
+        private const val SKIP_HINT_KEY = "CarNumberCaptureFragment-SkipHint"
 
         @JvmStatic
         fun newInstance(): CarNumberCaptureFragment = CarNumberCaptureFragment()
@@ -73,9 +83,22 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
         mToggleFlashButton.visibility = View.GONE
 
         mOverlay = view.findViewById(R.id.overlay)
-        mTextureView.addOnLayoutChangeListener { _, left, top, right, bottom, _, _, _, _ ->
+        mTextureView.addOnLayoutChangeListener { _, left, top, _, _, _, _, _, _ ->
             mOverlay.startPoint = Point(left, top)
 
+        }
+
+        // Show hint ?
+        if (context?.getSharedPreferences(SHARED_PREFS_NAME, Context.MODE_PRIVATE)
+                ?.getBoolean(SKIP_HINT_KEY, false) != true) {
+            mHintView = view.findViewById(R.id.hint_view)
+            mHideHintButton = mHintView?.findViewById(R.id.hint_hide_button)
+            mHintView?.visibility = View.VISIBLE
+            mHideHintButton?.setOnClickListener {
+                hideHintView(null)
+            }
+
+            mOverlay.visibility = View.GONE
         }
     }
 
@@ -124,7 +147,11 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
                     mTextureView.setAspectRatio(previewSize.height, previewSize.width)
                 }
 
-                if (flashStatus != null) {
+                if (mHideHintButton != null) {
+                    mHideHintButton!!.setOnClickListener {
+                        hideHintView(flashStatus)
+                    }
+                } else if (flashStatus != null) {
                     mToggleFlashButton.visibility = View.VISIBLE
                     mToggleFlashButton.isSelected = flashStatus
                 }
@@ -136,24 +163,6 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
             mPreviewManager = null
             listener.onCameraPreviewError(e)
         }
-
-//        mToggleFlashButton.postDelayed({
-//
-//            val top1 = mTextureView.top
-//            val top2 = mOverlay.top
-//
-//            val left1 = mTextureView.left
-//            val left2 = mOverlay.left
-//
-//
-//            val bot1 = mTextureView.bottom
-//            val bot2 = mOverlay.bottom
-//
-//            val ri1 = mTextureView.right
-//            val ri2 = mOverlay.right
-//
-//
-//        }, 1000)
 
     }
 
@@ -182,6 +191,25 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
 
     private fun clearDetections() {
         mOverlay.drawDetections(null)
+    }
+
+    private fun hideHintView(flashStatus: Boolean?) {
+
+        mHideHintButton = mHintView?.findViewById(R.id.hint_hide_button)
+        mHintView?.visibility = View.GONE
+        mHideHintButton?.setOnClickListener(null)
+        mHintView = null
+        mHideHintButton = null
+
+        mOverlay.visibility = View.VISIBLE
+
+        if (flashStatus != null) {
+            mToggleFlashButton.visibility = View.VISIBLE
+            mToggleFlashButton.isSelected = flashStatus
+        }
+
+        context?.getSharedPreferences(SHARED_PREFS_NAME, Context.MODE_PRIVATE)?.edit()?.
+                putBoolean(SKIP_HINT_KEY, true)?.apply()
     }
 
     // ---------------------------------------------------------------------------------------------
