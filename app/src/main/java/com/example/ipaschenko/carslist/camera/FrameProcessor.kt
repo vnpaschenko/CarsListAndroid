@@ -16,16 +16,52 @@ class FrameProcessor(private val cancellable: Cancellable,
     }
 
     private val mBusy = AtomicBoolean(false)
+    private var mBuffer: ByteArray? = null
 
+    /** Occur ownership on busy flag **/
     fun take(): Boolean = mBusy.compareAndSet(false, true)
 
+    /** Release ownership on busy flag **/
     fun release() = mBusy.set(false)
 
+    /** Process data  **/
     fun process(buffer: ByteArray, imageSize: Size, imageFormat: Int, frameRotation: Int) {
+
         EXECUTOR.execute {
             try {
-                listener.onCameraPreviewObtained(buffer, imageSize, imageFormat, frameRotation,
-                        cancellable)
+                if (!cancellable.isCancelled) {
+                    listener.onCameraPreviewObtained(buffer, imageSize, imageFormat, frameRotation,
+                            cancellable)
+                }
+            } finally {
+                release()
+            }
+        }
+    }
+
+    /** Copy the data and process it. dataConsumed will be called when it is copied and can be
+     * re-used **/
+    fun processCopy(buffer: ByteArray, imageSize: Size, imageFormat: Int, frameRotation: Int,
+                dataConsumed:(buffer: ByteArray) -> Unit) {
+
+        EXECUTOR.execute {
+            try {
+                if (!cancellable.isCancelled) {
+
+                    // Copy the data and notify it is consumed
+                    val size = buffer.size
+                    if (mBuffer?.size != size) {
+                        mBuffer = ByteArray(size)
+                    }
+                    System.arraycopy(buffer, 0, mBuffer, 0, size)
+                    dataConsumed(buffer)
+
+                    // Perform processing
+                    listener.onCameraPreviewObtained(mBuffer!!, imageSize, imageFormat,
+                            frameRotation, cancellable)
+                } else {
+                    dataConsumed(buffer)
+                }
             } finally {
                 release()
             }

@@ -13,6 +13,8 @@ import java.io.IOException
 
 /**
  * CameraPreviewManager implementation based on camera v1 api
+ * In spite Camera v1 is deprecated, it can use ImageFormat.NV21 required for frames processing
+ * while Camera v2 fails with it
  */
 @Suppress("DEPRECATION")
 class CameraV1PreviewManager(settings: CameraPreviewSettings): CameraPreviewManager {
@@ -90,8 +92,11 @@ class CameraV1PreviewManager(settings: CameraPreviewSettings): CameraPreviewMana
             val callback = CameraPreviewCallback(listener, selectedPreviewSize, mSettings.imageFormat,
                     frameRotation, mCancellationToken!!)
             camera.setPreviewCallbackWithBuffer(callback)
-            camera.addCallbackBuffer(callback.createPreviewBuffer(selectedPreviewSize))
-            camera.addCallbackBuffer(callback.createPreviewBuffer(selectedPreviewSize))
+
+            // The only thing we do in background before consumption is copying data, so two buffers
+            // should be enough
+            camera.addCallbackBuffer(createPreviewBuffer(selectedPreviewSize))
+            camera.addCallbackBuffer(createPreviewBuffer(selectedPreviewSize))
 
             // Start preview
             camera.setPreviewTexture(textureView.surfaceTexture)
@@ -182,6 +187,7 @@ class CameraV1PreviewManager(settings: CameraPreviewSettings): CameraPreviewMana
     }
 
     private fun applyRotation(context: Context, camera: Camera, parameters: Camera.Parameters): Int {
+        // Rotate preview depend on device orientation
 
         val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         var degrees = 0
@@ -213,29 +219,36 @@ class CameraV1PreviewManager(settings: CameraPreviewSettings): CameraPreviewMana
         return angle / 90
     }
 
+    private fun createPreviewBuffer(previewSize: Size): ByteArray {
+        val bitsPerPixel = ImageFormat.getBitsPerPixel(mSettings.imageFormat)
 
+        val sizeInBits = (previewSize.height * previewSize.width * bitsPerPixel).toLong()
+        val bufferSize = Math.ceil(sizeInBits / 8.0).toInt() + 1
+
+        return ByteArray(bufferSize)
+    }
+
+    // Camera.PreviewCallback implementation
     private class CameraPreviewCallback(
-            private val listener: CameraPreviewManager.CameraPreviewManagerEventListener,
+            listener: CameraPreviewManager.CameraPreviewManagerEventListener,
             private val previewSize: Size, private val imageFormat: Int,
             private val frameRotation: Int, private val cancellable: Cancellable):
             Camera.PreviewCallback {
 
+        private val mFrameProcessor = FrameProcessor(cancellable, listener)
+
         override fun onPreviewFrame(data: ByteArray, camera: Camera) {
-            camera.addCallbackBuffer(data)
-        }
 
-        fun createPreviewBuffer(previewSize: Size): ByteArray {
-            val bitsPerPixel = ImageFormat.getBitsPerPixel(imageFormat)
-
-            val sizeInBits = (previewSize.height * previewSize.width * bitsPerPixel).toLong()
-            val bufferSize = Math.ceil(sizeInBits / 8.0).toInt() + 1
-
-
-            // Creating the byte array this way and wrapping it, as opposed to using .allocate(),
-            // should guarantee that there will be an array to work with.
-            return ByteArray(bufferSize)
+            if (!cancellable.isCancelled && mFrameProcessor.take()) {
+                // We are called from main thread, so let's copy buffer in the frame processor's thread
+                mFrameProcessor.processCopy(data, previewSize, imageFormat, frameRotation) {
+                    camera.addCallbackBuffer(it)
+                }
+            } else {
+                // Consume data immediately
+                camera.addCallbackBuffer(data)
+            }
         }
     }
-
 
 }
