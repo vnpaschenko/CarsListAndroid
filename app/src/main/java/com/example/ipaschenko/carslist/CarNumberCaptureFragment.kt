@@ -1,17 +1,15 @@
 package com.example.ipaschenko.carslist
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.ImageFormat
-import android.graphics.Matrix
-import android.graphics.RectF
 import android.graphics.SurfaceTexture
 import android.os.Bundle
 import android.os.SystemClock
 import android.support.v4.app.Fragment
 import android.support.v4.content.ContextCompat
+import android.util.Size
 import android.view.*
 import com.example.ipaschenko.carslist.camera.CameraPreviewManager
 import com.example.ipaschenko.carslist.camera.CameraPreviewSettings
@@ -34,7 +32,6 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
     private lateinit var mTextureView: AutoFitTextureView
     private lateinit var mToggleFlashButton: View
     private var mPreviewManager: CameraPreviewManager? = null
-    private val mFrameRotation = AtomicInteger(0)
 
     companion object {
         private const val CAMERA_PERMISSION_REQUEST = 2018
@@ -65,7 +62,7 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
     override fun onResume() {
         super.onResume()
         if (mTextureView.isAvailable) {
-            startPreview(mTextureView.width, mTextureView.height)
+            startPreview()
         } else {
             mTextureView.surfaceTextureListener = this
         }
@@ -77,46 +74,46 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
         mPreviewManager = null
     }
 
-    private fun startPreview(viewWidth: Int, viewHeight: Int) {
+    private fun startPreview() {
         activity ?: return
 
         val permission = ContextCompat.checkSelfPermission(activity!!, Manifest.permission.CAMERA)
         if (permission != PackageManager.PERMISSION_GRANTED) {
             requestCameraPermission()
         } else {
-            startPreviewManager(viewWidth, viewHeight)
+            startPreviewManager()
         }
     }
 
-    private fun startPreviewManager(viewWidth: Int, viewHeight: Int) {
+    private fun startPreviewManager() {
         val settings = CameraPreviewSettings(ImageFormat.NV21, 1024 * 768) // 1280x720?
 
-        mPreviewManager = CameraPreviewManager.newPreviewManager(settings, activity!!, mTextureView,
-                CameraEventListener(this))
+        mToggleFlashButton.visibility = View.GONE
 
-        transformSurface(viewWidth, viewHeight)
+        mPreviewManager = CameraPreviewManager.newPreviewManager(settings)
+        val listener = CameraEventListener(this)
 
-        mToggleFlashButton.visibility =
-                if (mPreviewManager!!.flashSupported) View.VISIBLE else View.GONE
+        try {
 
-        applyRotation()
-        mPreviewManager!!.start()
-    }
+            mPreviewManager!!.start(context!!, false, mTextureView, listener,
+            { previewSize, flashStatus ->
 
-    private fun applyRotation() {
-        val windowManager = context?.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                    mTextureView.setAspectRatio(previewSize.width, previewSize.height)
+                } else {
+                    mTextureView.setAspectRatio(previewSize.height, previewSize.width)
+                }
 
-        var degrees = 0
-        val rotation = windowManager.defaultDisplay.rotation
-        when (rotation) {
-            Surface.ROTATION_0 -> degrees = 0
-            Surface.ROTATION_90 -> degrees = 90
-            Surface.ROTATION_180 -> degrees = 180
-            Surface.ROTATION_270 -> degrees = 270
+                if (flashStatus != null) {
+                    mToggleFlashButton.visibility = View.VISIBLE
+                    mToggleFlashButton.isSelected = flashStatus
+                }
+
+            })
+        } catch (e: Throwable) {
+            mPreviewManager = null
+            listener.onCameraPreviewError(e)
         }
-
-        val angle = (mPreviewManager!!.cameraOrientation + degrees) % 360
-        mFrameRotation.set(angle / 90)
     }
 
     private fun requestCameraPermission() {
@@ -131,60 +128,21 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
                 // Todo: Show some error dialog
                 activity?.finish()
             } else {
-                activity?.apply{ startPreviewManager(mTextureView.width, mTextureView.height) }
+                activity?.apply{ startPreviewManager() }
             }
         } else {
             super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         }
     }
 
-    private fun transformSurface(viewWidth: Int, viewHeight: Int) {
-        activity ?: return
-
-        val previewWidth = mPreviewManager?.previewSize?.width ?: viewWidth
-        val previewHeight = mPreviewManager?.previewSize?.height ?: viewHeight
-
-        if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
-            mTextureView.setAspectRatio(previewWidth, previewHeight)
-        } else {
-            mTextureView.setAspectRatio(previewHeight, previewWidth)
-        }
-
-        val rotation = activity!!.windowManager.defaultDisplay.rotation
-        val matrix = Matrix()
-        val viewRect = RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
-        val bufferRect = RectF(0f, 0f, previewHeight.toFloat(),
-                previewWidth.toFloat())
-
-        val centerX = viewRect.centerX()
-        val centerY = viewRect.centerY()
-
-        if (Surface.ROTATION_90 == rotation || Surface.ROTATION_270 == rotation) {
-            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
-
-            val scale = Math.max(viewHeight.toFloat() / previewHeight,
-                    viewWidth.toFloat() / previewWidth)
-
-            with(matrix) {
-                setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
-                postScale(scale, scale, centerX, centerY)
-                postRotate((90 * (rotation - 2)).toFloat(), centerX, centerY)
-            }
-        } else if (Surface.ROTATION_180 == rotation) {
-            matrix.postRotate(180f, centerX, centerY)
-        }
-
-        mTextureView.setTransform(matrix)
-    }
-
     // ---------------------------------------------------------------------------------------------
     // TextureView.SurfaceTextureListener implementation
     override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture?, width: Int, height: Int) {
-        transformSurface(width, height)
+        //transformSurface(width, height)
     }
 
     override fun onSurfaceTextureAvailable(surface: SurfaceTexture?, width: Int, height: Int) {
-        startPreview(width, height)
+        startPreview()
     }
 
     override fun onSurfaceTextureUpdated(surface: SurfaceTexture?) = Unit
@@ -207,8 +165,8 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
             mRecognizer.setProcessor(this)
         }
 
-        override fun onCameraPreviewObtained(imageData: ByteArray, width: Int, height: Int,
-                    imageFormat: Int, cancellable: Cancellable) {
+        override fun onCameraPreviewObtained(imageData: ByteArray, imageSize: Size, imageFormat: Int,
+                frameRotation: Int, cancellable: Cancellable) {
 
             val parent = mParentRef.get()
             parent ?: return
@@ -216,10 +174,10 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
             val buffer = ByteBuffer.wrap(imageData, 0, imageData.size)
 
             val frame = Frame.Builder()
-                    .setImageData(buffer, width, height, imageFormat)
+                    .setImageData(buffer, imageSize.width, imageSize.height, imageFormat)
                     .setId(mFrameId++)
                     .setTimestampMillis(SystemClock.elapsedRealtime() - mStartTime)
-                    .setRotation(parent.mFrameRotation.get())
+                    .setRotation(frameRotation)
                     .build()
             mRecognizer.receiveFrame(frame)
         }
