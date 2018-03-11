@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.ImageFormat
+import android.graphics.Point
 import android.graphics.Rect
 import android.graphics.SurfaceTexture
 import android.os.Bundle
@@ -19,6 +20,7 @@ import com.example.ipaschenko.carslist.camera.CameraPreviewSettings
 import com.example.ipaschenko.carslist.utils.Cancellable
 import com.example.ipaschenko.carslist.utils.canContinue
 import com.example.ipaschenko.carslist.views.AutoFitTextureView
+import com.example.ipaschenko.carslist.views.OverlayView
 import com.example.ipaschenko.carslist.views.applyRoundOutline
 import com.google.android.gms.vision.Detector
 import com.google.android.gms.vision.Frame
@@ -26,6 +28,13 @@ import com.google.android.gms.vision.text.TextBlock
 import com.google.android.gms.vision.text.TextRecognizer
 import java.lang.ref.WeakReference
 import java.nio.ByteBuffer
+import java.util.*
+
+
+/**
+ * Represents text detection
+ */
+class Detection(val text: String, val boundingBox: Rect?) {}
 
 /**
  *
@@ -33,6 +42,8 @@ import java.nio.ByteBuffer
 class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
 
     private lateinit var mTextureView: AutoFitTextureView
+    private lateinit var mOverlay: OverlayView
+
     private lateinit var mToggleFlashButton: View
     private var mPreviewManager: CameraPreviewManager? = null
 
@@ -60,6 +71,12 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
             }
         }
         mToggleFlashButton.visibility = View.GONE
+
+        mOverlay = view.findViewById(R.id.overlay)
+        mTextureView.addOnLayoutChangeListener { _, left, top, right, bottom, _, _, _, _ ->
+            mOverlay.startPoint = Point(left, top)
+
+        }
     }
 
     override fun onResume() {
@@ -112,11 +129,32 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
                     mToggleFlashButton.isSelected = flashStatus
                 }
 
+                mOverlay.previewSize = previewSize
+
             })
         } catch (e: Throwable) {
             mPreviewManager = null
             listener.onCameraPreviewError(e)
         }
+
+//        mToggleFlashButton.postDelayed({
+//
+//            val top1 = mTextureView.top
+//            val top2 = mOverlay.top
+//
+//            val left1 = mTextureView.left
+//            val left2 = mOverlay.left
+//
+//
+//            val bot1 = mTextureView.bottom
+//            val bot2 = mOverlay.bottom
+//
+//            val ri1 = mTextureView.right
+//            val ri2 = mOverlay.right
+//
+//
+//        }, 1000)
+
     }
 
     private fun requestCameraPermission() {
@@ -139,11 +177,11 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
     }
 
     private fun displayDetections(detections: Collection<Detection>) {
-
+        mOverlay.drawDetections(detections)
     }
 
     private fun clearDetections() {
-
+        mOverlay.drawDetections(null)
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -160,8 +198,6 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
 
     override fun onSurfaceTextureDestroyed(surface: SurfaceTexture?): Boolean = true
 
-
-    private class Detection(val text: String, val boundingBox: Rect?) {}
 
     // ---------------------------------------------------------------------------------------------
     // CameraPreviewManager.CameraPreviewManagerEventListener
@@ -236,13 +272,13 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
             }
             mLastDetectionsCount = count
 
-            val detections = ArrayList<Detection>(count)
+            val detectionsList = ArrayList<Detection>(count)
             for (i in 0 until count) {
                 val block = items!![i]
                 val text = block?.value
 
                 if (!TextUtils.isEmpty(text)) {
-                    detections.add(Detection(text!!, block.boundingBox))
+                    detectionsList.add(Detection(text!!, block.boundingBox))
                 }
             }
 
@@ -253,12 +289,12 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
                 if (cancellable.canContinue()) {
                     val parent = mParentRef.get()
                     if (parent != null) {
-                        parent.displayDetections(detections)
+                        parent.displayDetections(Collections.unmodifiableCollection(detectionsList))
                     }
                 }
             }
 
-            for (detection in detections) {
+            for (detection in detectionsList) {
                 processText(detection.text)
             }
         }
