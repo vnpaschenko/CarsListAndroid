@@ -14,7 +14,8 @@ import java.io.IOException
  * Captures preview from the camera and notifies event listener
  */
 
-class CameraPreviewSettings(val imageFormat: Int, val maxPreviewSize: Int) {}
+class CameraPreviewSettings(val imageFormat: Int, val maxPreviewSize: Int,
+                            val requestedFps: Int = 15) {}
 
 interface CameraPreviewManager {
 

@@ -59,14 +59,16 @@ class CameraV1PreviewManager(settings: CameraPreviewSettings): CameraPreviewMana
             parameters.setPreviewSize(selectedPreviewSize.width, selectedPreviewSize.height)
 
             // Deal with fps range
-            val fpsRange = selectPreviewFpsRange(parameters, 30.0f)
+            val fpsRange = selectPreviewFpsRange(parameters, mSettings.requestedFps)
                     ?: throw CameraPreviewManager.CameraSettingsException("Can't select fps range")
+
             parameters.setPreviewFpsRange(fpsRange[Camera.Parameters.PREVIEW_FPS_MIN_INDEX],
                     fpsRange[Camera.Parameters.PREVIEW_FPS_MAX_INDEX])
 
             // Deal with focus
-            if (parameters.supportedFocusModes?.contains(Camera.Parameters.FOCUS_MODE_AUTO) == true) {
-                parameters.focusMode = Camera.Parameters.FOCUS_MODE_AUTO
+            if (parameters.supportedFocusModes?.contains(
+                    Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE) == true) {
+                parameters.focusMode = Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE
             }
 
             // Deal with flash
@@ -159,10 +161,10 @@ class CameraV1PreviewManager(settings: CameraPreviewSettings): CameraPreviewMana
 
     }
 
-    private fun selectPreviewFpsRange(parameters: Camera.Parameters, desiredPreviewFps: Float): IntArray? {
+    private fun selectPreviewFpsRange(parameters: Camera.Parameters, desiredPreviewFps: Int): IntArray? {
         // The camera API uses integers scaled by a factor of 1000 instead of floating-point frame
         // rates.
-        val desiredPreviewFpsScaled = (desiredPreviewFps * 1000.0f).toInt()
+        val desiredPreviewFpsScaled = desiredPreviewFps * 1000
 
         // The method for selecting the best range is to minimize the sum of the differences between
         // the desired value and the upper and lower bounds of the range.  This may select a range
