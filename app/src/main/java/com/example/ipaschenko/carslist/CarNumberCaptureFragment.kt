@@ -1,6 +1,7 @@
 package com.example.ipaschenko.carslist
 
 import android.Manifest
+import android.arch.lifecycle.Lifecycle
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -88,6 +89,8 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
 
         }
 
+        mTextureView.surfaceTextureListener = this
+
         // Show hint ?
         if (context?.getSharedPreferences(SHARED_PREFS_NAME, Context.MODE_PRIVATE)
                 ?.getBoolean(SKIP_HINT_KEY, false) != true) {
@@ -106,8 +109,6 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
         super.onResume()
         if (mTextureView.isAvailable) {
             startPreview()
-        } else {
-            mTextureView.surfaceTextureListener = this
         }
     }
 
@@ -219,7 +220,9 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
     }
 
     override fun onSurfaceTextureAvailable(surface: SurfaceTexture?, width: Int, height: Int) {
-        startPreview()
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            startPreview()
+        }
     }
 
     override fun onSurfaceTextureUpdated(surface: SurfaceTexture?) = Unit
