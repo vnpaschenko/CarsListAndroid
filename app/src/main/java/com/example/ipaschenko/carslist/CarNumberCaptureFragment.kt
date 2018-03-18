@@ -245,6 +245,7 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
             val intent = CarDetailsActivity.newIntent(context!!, car)
             mPendingCarDetails = null
             startActivity(intent)
+
         } else {
             // Remember the details to show when we will be resumed
             mPendingCarDetails = car

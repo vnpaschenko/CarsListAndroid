@@ -11,4 +11,10 @@
     <string name="unavailable_data_message">Data is unavailable!!! Numbers can\'t be processed!!!</string>
     <string name="update_data_error_message">Data can\'t be updated!</string>
 
+    <string name="found_car_title">Found Car</string>
+    <string name="phone_incorrect_format">Incorrect phone for %s</string>
+    <string name="phone_no_permission">App has no permission to call phone</string>
+
+    <string name="phone_call_failed">Can\'t call phone</string>
+
 </resources>
