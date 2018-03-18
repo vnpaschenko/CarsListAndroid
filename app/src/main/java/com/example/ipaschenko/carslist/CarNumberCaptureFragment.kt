@@ -32,6 +32,7 @@ import java.lang.ref.WeakReference
 import java.nio.ByteBuffer
 import java.util.*
 import android.arch.lifecycle.Observer
+import android.util.Log
 import android.widget.Toast
 import com.example.ipaschenko.carslist.data.*
 
@@ -240,6 +241,11 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
         mOverlay.drawDetections(null)
     }
 
+    private fun displayNotFoundNumber(number: CarNumber) {
+        val message = String.format(getString(R.string.unknown_car_message_format), number.toString())
+        context?.apply { Toast.makeText(context, message, Toast.LENGTH_SHORT).show() }
+    }
+
     private fun showDetails(car: CarDetails) {
         if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
             // We can start the activity
@@ -343,15 +349,7 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
             }
             mLastDetectionsCount = 0
 
-            val cancellable = mCancellable
-            mHandler.post {
-                if (cancellable.canContinue()) {
-                    val parent = mParentRef.get()
-                    if (parent != null) {
-                        parent.clearDetections()
-                    }
-                }
-            }
+            postToParent { it.clearDetections() }
         }
 
         override fun receiveDetections(detections: Detector.Detections<TextBlock>?) {
@@ -381,16 +379,9 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
                 }
             }
 
-
             // Post display detections
-            val cancellable = mCancellable
-            mHandler.post {
-                if (cancellable.canContinue()) {
-                    val parent = mParentRef.get()
-                    if (parent != null) {
-                        parent.displayDetections(Collections.unmodifiableCollection(detectionsList))
-                    }
-                }
+            postToParent {
+                it.displayDetections(Collections.unmodifiableCollection(detectionsList))
             }
 
             for (detection in detectionsList) {
@@ -420,18 +411,55 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
                 return true
             }
 
+            processNotFoundNumber(number)
             return false
         }
 
         private fun processCar(car: CarInfo) {
             val carDetails = CarDetails(car)
+            postToParent{
+                it.showDetails(carDetails)
+            }
+        }
+
+        private fun postToParent(what: (CarNumberCaptureFragment) -> Unit) {
             val cancellable = mCancellable
             mHandler.post {
                 if (cancellable.canContinue()) {
                     val parent = mParentRef.get()
                     if (parent != null) {
-                        parent.showDetails(carDetails)
+                        what(parent)
                     }
+                }
+            }
+        }
+
+        private var mNotFoundNumber: CarNumber? = null
+        private var mNotFoundNumberRecognitions = 0
+        private var mNotfoundNumberStartTime = 0L
+
+        private fun processNotFoundNumber(number: CarNumber) {
+            // If we red the number that can't be found in database, report 'unknown number'
+            // to the client
+
+            if (mNotFoundNumber == null || mNotFoundNumber!!.root != number.root) {
+                // Init new number
+                mNotFoundNumber = number
+                mNotFoundNumberRecognitions = 1
+                mNotfoundNumberStartTime = System.currentTimeMillis()
+
+            } else {
+                // process existed one
+                mNotFoundNumberRecognitions ++
+
+                if (mNotFoundNumberRecognitions > 7 &&
+                        System.currentTimeMillis() - mNotfoundNumberStartTime > 3000) {
+                    // It looks like user points the camera to this number
+
+                    postToParent { it.displayNotFoundNumber(number) }
+                    mNotFoundNumber = null
+                    mNotFoundNumberRecognitions = 0
+                    mNotfoundNumberStartTime = 0
                 }
             }
         }

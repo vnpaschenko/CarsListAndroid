@@ -19,6 +19,21 @@ data class CarNumber(val prefix: String?, val root: String, val suffix: String?,
         return result
     }
 
+    override fun toString(): String {
+        val builder = StringBuilder()
+
+        if (prefix != null) {
+            builder.append(prefix).append(" ")
+        }
+        builder.append(root)
+
+        if (suffix != null) {
+            builder.append(" ").append(suffix)
+        }
+
+        return builder.toString()
+    }
+
     companion object {
         /**
          * Create car number from the specified string. Set translateCyrillic to true if some

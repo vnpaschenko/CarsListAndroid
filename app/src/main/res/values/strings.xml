@@ -17,4 +17,5 @@
 
     <string name="phone_call_failed">Can\'t call phone</string>
 
+    <string name="unknown_car_message_format">Unknown car: %s</string>
 </resources>
