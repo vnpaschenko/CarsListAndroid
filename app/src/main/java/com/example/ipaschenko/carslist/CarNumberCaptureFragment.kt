@@ -33,8 +33,7 @@ import java.nio.ByteBuffer
 import java.util.*
 import android.arch.lifecycle.Observer
 import android.widget.Toast
-import com.example.ipaschenko.carslist.data.DbStatus
-import com.example.ipaschenko.carslist.data.formatDbStatusError
+import com.example.ipaschenko.carslist.data.*
 
 const val SHARED_PREFS_NAME = "CarsListPrefs"
 
@@ -269,6 +268,7 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
         private var mCancellable: Cancellable? = null
         private val mHandler = Handler()
         private var mLastDetectionsCount = 0
+        private var mDatabase: CarsDatabase? = null
 
         init {
             mRecognizer.setProcessor(this)
@@ -320,6 +320,8 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
                 return
             }
 
+            //processText("AE 5432")
+
             val items = detections?.detectedItems
             val count = items?.size() ?: 0
 
@@ -357,6 +359,25 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
         }
 
         private fun processText(text: String) {
+            val number = CarNumber.fromString(text, false)
+            if (number == null || number.isCustom) {
+                return
+            }
+
+            if (mDatabase == null) {
+                mDatabase = CarsListApplication.application.getCarsListDatabase(mCancellable)
+            }
+
+            val dao = mDatabase?.carsDao() ?: return
+
+            val matches = dao.loadByNumberRoot(number.root)
+            val car = getMostProperCar(matches, number)
+            if (car != null) {
+                processCar(car)
+            }
+        }
+
+        private fun processCar(car: CarInfo) {
 
         }
 

@@ -6,6 +6,19 @@ package com.example.ipaschenko.carslist.data
 data class CarNumber(val prefix: String?, val root: String, val suffix: String?,
                       val isCustom: Boolean) {
 
+    fun matchWithParts(desiredPrefix: String?, desiredSuffix: String?): Int {
+        var result = 0;
+        if (prefix != null && desiredPrefix != null) {
+            result += matchParts(desiredPrefix, prefix, true)
+        }
+
+        if (suffix != null && desiredSuffix != null) {
+            result += matchParts(desiredSuffix, suffix, false)
+        }
+
+        return result
+    }
+
     companion object {
         /**
          * Create car number from the specified string. Set translateCyrillic to true if some
@@ -83,6 +96,29 @@ data class CarNumber(val prefix: String?, val root: String, val suffix: String?,
             return builder.toString()
         }
     }
+}
+
+private fun matchParts(desiredPart: String, obtainedPart: String, reverse: Boolean): Int {
+    val desired = if (reverse) desiredPart.reversed() else desiredPart
+    val obtained = if (reverse) obtainedPart.reversed() else obtainedPart
+
+    var result = 0
+    val len = obtained.length
+    for ((index, desiredChar) in desired.withIndex()) {
+        if (index >= len) {
+            break
+        }
+        val obtainedChar = obtained[index]
+        if (desiredChar == obtainedChar) {
+            result += 2
+        } else if (desiredChar == '*' || obtainedChar == '*') {
+            result += 1
+        } else {
+            break
+        }
+    }
+
+    return result
 }
 
 private val String.containsOnlyNumbers: Boolean

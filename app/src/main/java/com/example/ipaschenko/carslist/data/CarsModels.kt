@@ -7,6 +7,21 @@ import android.os.Parcelable
 
 const val NUMBER_ATTRIBUTE_CUSTOM = 1.shl(0)
 
+fun getMostProperCar(selectedCars: List<CarInfo>?, recognizedNumber: CarNumber): CarInfo? {
+    if (selectedCars == null || selectedCars.isEmpty()) {
+        return null
+    }
+
+    if (selectedCars.size == 1) {
+        return selectedCars.first()
+    } else {
+        return selectedCars.maxBy {
+            recognizedNumber.matchWithParts(it.numberPrefix, it.numberSuffix)
+        }
+    }
+}
+
+
 @Entity(tableName = "cars")
 class CarInfo(): Parcelable {
 
