@@ -23,7 +23,7 @@ fun getMostProperCar(selectedCars: List<CarInfo>?, recognizedNumber: CarNumber):
 
 
 @Entity(tableName = "cars")
-class CarInfo(): Parcelable {
+class CarInfo() {
 
     @PrimaryKey(autoGenerate = true)
     var id: Int = 0
@@ -38,47 +38,6 @@ class CarInfo(): Parcelable {
     @ColumnInfo(name = "number_root") var numberRoot: String = ""
     @ColumnInfo(name = "number_suffix") var numberSuffix: String? = null
     @ColumnInfo(name = "number_attributes") var numberAttributes: Int = 0
-
-    // Parcelable implementation
-    constructor(parcel: Parcel) : this() {
-        id = parcel.readInt()
-        modelName = parcel.readString()
-        color = parcel.readString()
-        number = parcel.readString()
-        owner = parcel.readString()
-        phone = parcel.readString()
-        numberPrefix = parcel.readString()
-        numberRoot = parcel.readString()
-        numberSuffix = parcel.readString()
-        numberAttributes = parcel.readInt()
-    }
-
-    override fun writeToParcel(parcel: Parcel, flags: Int) {
-        parcel.writeInt(id)
-        parcel.writeString(modelName)
-        parcel.writeString(color)
-        parcel.writeString(number)
-        parcel.writeString(owner)
-        parcel.writeString(phone)
-        parcel.writeString(numberPrefix)
-        parcel.writeString(numberRoot)
-        parcel.writeString(numberSuffix)
-        parcel.writeInt(numberAttributes)
-    }
-
-    override fun describeContents(): Int {
-        return 0
-    }
-
-    companion object CREATOR : Parcelable.Creator<CarInfo> {
-        override fun createFromParcel(parcel: Parcel): CarInfo {
-            return CarInfo(parcel)
-        }
-
-        override fun newArray(size: Int): Array<CarInfo?> {
-            return arrayOfNulls(size)
-        }
-    }
 }
 
 @Dao

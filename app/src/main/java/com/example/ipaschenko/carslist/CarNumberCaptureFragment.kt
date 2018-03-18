@@ -219,6 +219,10 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
         mOverlay.drawDetections(null)
     }
 
+    private fun showDetails(car: CarDetails) {
+        val aa = 1
+    }
+
     private fun hideHintView(flashStatus: Boolean?) {
 
         mHideHintButton = mHintView?.findViewById(R.id.hint_hide_button)
@@ -269,6 +273,7 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
         private val mHandler = Handler()
         private var mLastDetectionsCount = 0
         private var mDatabase: CarsDatabase? = null
+        private var mIsRecognized = false
 
         init {
             mRecognizer.setProcessor(this)
@@ -278,6 +283,9 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
                 frameRotation: Int, cancellable: Cancellable) {
 
             mCancellable = cancellable
+            if (!mCancellable.canContinue() || mIsRecognized) {
+                return
+            }
 
             val parent = mParentRef.get()
             parent ?: return
@@ -316,10 +324,10 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
 
         override fun receiveDetections(detections: Detector.Detections<TextBlock>?) {
 
-            if (!mCancellable.canContinue()) {
+            if (!mCancellable.canContinue() || mIsRecognized) {
                 return
             }
-
+            // Test only
             //processText("AE 5432")
 
             val items = detections?.detectedItems
@@ -354,31 +362,46 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
             }
 
             for (detection in detectionsList) {
-                processText(detection.text)
+                if (processText(detection.text)) {
+                    break
+                }
             }
         }
 
-        private fun processText(text: String) {
+        private fun processText(text: String): Boolean {
             val number = CarNumber.fromString(text, false)
             if (number == null || number.isCustom) {
-                return
+                return false
             }
 
             if (mDatabase == null) {
                 mDatabase = CarsListApplication.application.getCarsListDatabase(mCancellable)
             }
 
-            val dao = mDatabase?.carsDao() ?: return
+            val dao = mDatabase?.carsDao() ?: return false
 
             val matches = dao.loadByNumberRoot(number.root)
             val car = getMostProperCar(matches, number)
             if (car != null) {
+                mIsRecognized = true
                 processCar(car)
+                return true
             }
+
+            return false
         }
 
         private fun processCar(car: CarInfo) {
-
+            val carDetails = CarDetails(car)
+            val cancellable = mCancellable
+            mHandler.post {
+                if (cancellable.canContinue()) {
+                    val parent = mParentRef.get()
+                    if (parent != null) {
+                        parent.showDetails(carDetails)
+                    }
+                }
+            }
         }
 
     }
