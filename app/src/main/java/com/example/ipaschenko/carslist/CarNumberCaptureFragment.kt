@@ -59,9 +59,12 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
     private val isHintDisplayed: Boolean
         get() = mHideHintButton != null
 
+    private var mPendingCarDetails: CarDetails? = null
+
     companion object {
         private const val CAMERA_PERMISSION_REQUEST = 2018
         private const val SKIP_HINT_KEY = "CarNumberCaptureFragment-SkipHint"
+        private const val PENDING_DETAILS_KEY = "CarNumberCaptureFragment-PendingDetails"
 
         @JvmStatic
         fun newInstance(): CarNumberCaptureFragment = CarNumberCaptureFragment()
@@ -128,11 +131,28 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
 
             mOverlay.visibility = View.GONE
         }
+
+        mPendingCarDetails = savedInstanceState?.getParcelable(PENDING_DETAILS_KEY)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        if (mPendingCarDetails != null) {
+            outState.putParcelable(PENDING_DETAILS_KEY, mPendingCarDetails)
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        if (mTextureView.isAvailable) {
+        if (mPendingCarDetails != null) {
+
+            // We have details to show, start CarDetailsActivity
+            val intent = CarDetailsActivity.newIntent(context!!, mPendingCarDetails!!)
+            mPendingCarDetails = null
+            startActivity(intent)
+
+        } else if (mTextureView.isAvailable) {
+            // Our texture is available, start preview
             startPreview()
         }
     }
@@ -220,7 +240,15 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
     }
 
     private fun showDetails(car: CarDetails) {
-        val aa = 1
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            // We can start the activity
+            val intent = CarDetailsActivity.newIntent(context!!, car)
+            mPendingCarDetails = null
+            startActivity(intent)
+        } else {
+            // Remember the details to show when we will be resumed
+            mPendingCarDetails = car
+        }
     }
 
     private fun hideHintView(flashStatus: Boolean?) {
@@ -249,7 +277,9 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
     }
 
     override fun onSurfaceTextureAvailable(surface: SurfaceTexture?, width: Int, height: Int) {
-        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+        // Don't start preview if we have pending details to show
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
+                mPendingCarDetails == null) {
             startPreview()
         }
     }
