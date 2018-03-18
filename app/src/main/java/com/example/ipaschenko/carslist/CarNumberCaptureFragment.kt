@@ -31,7 +31,10 @@ import com.google.android.gms.vision.text.TextRecognizer
 import java.lang.ref.WeakReference
 import java.nio.ByteBuffer
 import java.util.*
-
+import android.arch.lifecycle.Observer
+import android.widget.Toast
+import com.example.ipaschenko.carslist.data.DbStatus
+import com.example.ipaschenko.carslist.data.formatDbStatusError
 
 const val SHARED_PREFS_NAME = "CarsListPrefs"
 
@@ -65,8 +68,31 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
         fun newInstance(): CarNumberCaptureFragment = CarNumberCaptureFragment()
     }
 
+    override fun onAttach(context: Context?) {
+        super.onAttach(context)
+        CarsListApplication.application.databaseStatus.observe(this,
+                Observer { status: DbStatus? ->
+                    if (status != null) {
+                        if (!status.isDataAvailable) {
+                            val message = getString(R.string.unavailable_data_message)
+                            val error = formatDbStatusError(context!!, status.errorInfo?.error)
+                            Toast.makeText(context, "$message\n$error", Toast.LENGTH_LONG).
+                                    show()
+
+                        } else if (status.errorInfo != null && !status.errorInfo.handled) {
+                            status.errorInfo.handled = true
+                            val message = getString(R.string.update_data_error_message)
+                            val error = formatDbStatusError(context!!, status.errorInfo.error)
+                            Toast.makeText(context, "$message\n$error", Toast.LENGTH_SHORT).
+                                    show()
+                        }
+                    }
+                }
+        )
+    }
+
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?,
-            savedInstanceState: Bundle?): View? =
+                              savedInstanceState: Bundle?): View? =
             inflater.inflate(R.layout.fragment_car_number_capture, container, false)
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {

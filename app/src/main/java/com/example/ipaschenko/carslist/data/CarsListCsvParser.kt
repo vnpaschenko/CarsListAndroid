@@ -46,14 +46,16 @@ class CarsListCsvParser(inputStream: InputStream, delimiter: String = ","): Iter
                 throw ParseException(mCurrentLineLineNumber)
             }
 
-            // TODO: Parse number here
+            // Parse the number
+            val number = CarNumber.fromString(mCurrentRow!!.carNumber, true) ?:
+                    throw ParseException(mCurrentLineLineNumber)
 
             val carInfo = CarInfo()
             carInfo.number = mCurrentRow!!.carNumber
-
-//            carInfo.numberPrefix = parts.first
-//            carInfo.numberRoot = parts.second
-//            carInfo.numberSuffix = parts.third
+            carInfo.numberRoot = number.root
+            carInfo.numberPrefix = number.prefix
+            carInfo.numberSuffix = number.suffix
+            carInfo.numberAttributes = if (number.isCustom) NUMBER_ATTRIBUTE_CUSTOM else 0
 
             carInfo.modelName = mCurrentRow!!.carModelName
             carInfo.color = mCurrentRow!!.carColor

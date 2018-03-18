@@ -70,7 +70,7 @@ class CarInfo(): Parcelable {
 interface CarsDao {
 
     //Query with parameters. Kotlin renames params
-    @Query("SELECT * FROM cars WHERE number_root = :arg0")
+    @Query("SELECT * FROM cars WHERE number_root = :numberRoot")
     fun loadByNumberRoot(numberRoot: String): List<CarInfo>
 
     @Query("SELECT Count(*) FROM cars")

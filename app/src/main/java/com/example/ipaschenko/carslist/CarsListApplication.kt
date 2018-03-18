@@ -5,48 +5,52 @@ import android.arch.lifecycle.LiveData
 import android.arch.lifecycle.MutableLiveData
 import android.arch.persistence.room.Room
 import android.os.AsyncTask
-import com.example.ipaschenko.carslist.data.CarsDatabase
-import com.example.ipaschenko.carslist.data.CarsListCsvParser
+import com.example.ipaschenko.carslist.data.*
+import com.example.ipaschenko.carslist.utils.Cancellable
+import com.example.ipaschenko.carslist.utils.canContinue
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-
-data class DbState(val status: Int, val error: Throwable?) {
-    companion object {
-        const val INITIALIZED_STATE_MASK = 1
-        const val UPDATING_STATE_MASK: Int = 1.shl(1)
-        const val UPDATED_STATE_MASK: Int = 1.shl(2)
-    }
-}
-
-val DbState?.isInitialized
-    get() = this != null && this.status.and(DbState.INITIALIZED_STATE_MASK) != 0
-
-
+/**
+ * Application
+ */
 class CarsListApplication: Application() {
     private val mDbLock = CountDownLatch(1)
     private var mDatabase: CarsDatabase? = null
-    private val mDbStateData = MutableLiveData<DbState>()
+    private val mDbStateData = MutableLiveData<DbStatus>()
 
     companion object {
         @JvmStatic
         lateinit var application: CarsListApplication
             private set
+
+        private val EXECUTOR = Executors.newSingleThreadExecutor()
     }
 
-    fun getCarsListDatabase(timeoutMills: Long): CarsDatabase? =
-        if (mDbLock.await(timeoutMills, TimeUnit.MILLISECONDS)) mDatabase else null
+    fun getCarsListDatabase(cancellable: Cancellable?): CarsDatabase? {
+        var database: CarsDatabase? = null
+        while (cancellable.canContinue()) {
+            if (mDbLock.await(500, TimeUnit.MILLISECONDS)) {
+                database = mDatabase
+                break
+            }
+        }
+        return database
+    }
 
-    val databaseState: LiveData<DbState>
+    val databaseStatus: LiveData<DbStatus>
         get() = mDbStateData
 
     override fun onCreate() {
         super.onCreate()
         application = this
 
-        AsyncTask.THREAD_POOL_EXECUTOR.execute {
+        EXECUTOR.execute {
             try {
                 initDatabase()
+            } catch (error: Throwable) {
+                mDbStateData.postValue(DbStatus(false, ErrorInfo(error)))
             } finally {
                 mDbLock.countDown()
             }
@@ -57,6 +61,7 @@ class CarsListApplication: Application() {
         val database = Room.databaseBuilder(this, CarsDatabase::class.java, "cars_list").build()
         val dao = database.carsDao()
         var error: Throwable? = null
+        mDatabase = database
 
         if (dao.size() == 0) {
 
@@ -66,6 +71,11 @@ class CarsListApplication: Application() {
             database.beginTransaction()
             try {
                 for (car in parser) {
+                    if (car.numberAttributes.and(NUMBER_ATTRIBUTE_CUSTOM) != 0) {
+                        // Custom numbers are not currently supported
+                        throw UnsupportedNumberException(car.number)
+
+                    }
                     dao.insert(car)
                 }
                 database.setTransactionSuccessful()
@@ -76,9 +86,7 @@ class CarsListApplication: Application() {
             }
         }
 
-        mDatabase = database
-
-        mDbStateData.postValue(DbState(if (error == null) DbState.INITIALIZED_STATE_MASK else 0,
-                error))
+        val errorInfo = if (error != null) ErrorInfo(error) else null
+        mDbStateData.postValue(DbStatus(error == null, errorInfo))
     }
 }

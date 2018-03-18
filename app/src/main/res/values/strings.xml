@@ -4,4 +4,11 @@
     <string name="hint_text">Point the camera to the car number</string>
     <string name="got_it_button_title">Got it</string>
 
+    <string name="unsupported_number_message_format">Data contains unsupported number: %s</string>
+    <string name="data_parse_error_message_format">Parse error at line %d</string>
+    <string name="unknown_error_message">Unknown error</string>
+
+    <string name="unavailable_data_message">Data is unavailable!!! Numbers can\'t be processed!!!</string>
+    <string name="update_data_error_message">Data can\'t be updated!</string>
+
 </resources>

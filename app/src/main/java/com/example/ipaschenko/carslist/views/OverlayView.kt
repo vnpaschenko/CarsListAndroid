@@ -49,7 +49,7 @@ class OverlayView @JvmOverloads constructor(
         }
 
         val scale = Math.max(canvas.width, canvas.height).toFloat() /
-                Math.max(previewSize!!.width, previewSize!!.height).toFloat()
+                Math.max(previewSize.width, previewSize.height).toFloat()
 
         for(detection in mDetections!!) {
             drawDetection(canvas, detection, scale)
