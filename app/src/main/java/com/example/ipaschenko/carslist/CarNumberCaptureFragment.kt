@@ -161,6 +161,7 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
         super.onPause()
         mPreviewManager?.stop()
         mPreviewManager = null
+        clearDetections()
     }
 
     private fun startPreview() {

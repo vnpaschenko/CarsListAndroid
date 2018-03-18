@@ -11,7 +11,7 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:layout_margin="24dp"
-        android:paddingBottom="60dp"
+        android:paddingBottom="80dp"
         android:layout_gravity="center">
 
         <TextView
@@ -20,9 +20,7 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:layout_marginBottom="32dp"
-            android:textSize="26sp"
-            android:text="def df sd"
-            />
+            android:textSize="26sp"/>
 
         <TextView
             android:id="@+id/car_model"
@@ -30,9 +28,7 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:textSize="20sp"
-            android:layout_marginBottom="12dp"
-            android:text="def df sd"
-             />
+            android:layout_marginBottom="12dp"/>
 
         <TextView
             android:id="@+id/car_number"
@@ -40,9 +36,7 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:textSize="26sp"
-            android:text="def df sd"
-            android:textStyle="bold"
-          />
+            android:textStyle="bold" />
 
     </LinearLayout>
 
