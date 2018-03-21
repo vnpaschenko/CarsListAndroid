@@ -10,29 +10,15 @@ import android.graphics.Point
 import android.graphics.Rect
 import android.graphics.SurfaceTexture
 import android.os.Bundle
-import android.os.Handler
-import android.os.SystemClock
 import android.support.v4.app.Fragment
 import android.support.v4.content.ContextCompat
-import android.text.TextUtils
-import android.util.Size
 import android.view.*
 import com.example.ipaschenko.carslist.camera.CameraPreviewManager
 import com.example.ipaschenko.carslist.camera.CameraPreviewSettings
-import com.example.ipaschenko.carslist.utils.Cancellable
-import com.example.ipaschenko.carslist.utils.canContinue
 import com.example.ipaschenko.carslist.views.AutoFitTextureView
 import com.example.ipaschenko.carslist.views.OverlayView
 import com.example.ipaschenko.carslist.views.applyRoundOutline
-import com.google.android.gms.vision.Detector
-import com.google.android.gms.vision.Frame
-import com.google.android.gms.vision.text.TextBlock
-import com.google.android.gms.vision.text.TextRecognizer
-import java.lang.ref.WeakReference
-import java.nio.ByteBuffer
-import java.util.*
 import android.arch.lifecycle.Observer
-import android.util.Log
 import android.widget.Toast
 import com.example.ipaschenko.carslist.data.*
 
@@ -44,9 +30,10 @@ const val SHARED_PREFS_NAME = "CarsListPrefs"
 class Detection(val text: String, val boundingBox: Rect?) {}
 
 /**
- *
+ * Fragment that shows preview and deals with camera manager
  */
-class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
+class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
+        NumberCapturePresenter.View {
 
     private lateinit var mTextureView: AutoFitTextureView
     private lateinit var mOverlay: OverlayView
@@ -73,21 +60,25 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
 
     override fun onAttach(context: Context?) {
         super.onAttach(context)
+
+        // Setup observer for DB status
         CarsListApplication.application.databaseStatus.observe(this,
                 Observer { status: DbStatus? ->
                     if (status != null) {
                         if (!status.isDataAvailable) {
+                            // Data is unavailable, we can't recognize anything
                             val message = getString(R.string.unavailable_data_message)
                             val error = formatDbStatusError(context!!, status.errorInfo?.error)
-                            Toast.makeText(context, "$message\n$error", Toast.LENGTH_LONG).
-                                    show()
+                            showToast("$message\n$error", false)
+
 
                         } else if (status.errorInfo != null && !status.errorInfo.handled) {
+                            // Data is available but was not successfully updated
                             status.errorInfo.handled = true
                             val message = getString(R.string.update_data_error_message)
                             val error = formatDbStatusError(context!!, status.errorInfo.error)
-                            Toast.makeText(context, "$message\n$error", Toast.LENGTH_SHORT).
-                                    show()
+                            showToast("$message\n$error")
+
                         }
                     }
                 }
@@ -100,6 +91,8 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        // Setup controls here
         mTextureView = view.findViewById(R.id.texture)
         mToggleFlashButton = view.findViewById(R.id.toggle_flash)
         mToggleFlashButton.applyRoundOutline()
@@ -138,6 +131,9 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+
+        // If we have obtained car details that can't be presented due to inproper lifecycle
+        // state, save it for further processing
         if (mPendingCarDetails != null) {
             outState.putParcelable(PENDING_DETAILS_KEY, mPendingCarDetails)
         }
@@ -182,7 +178,7 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
         mToggleFlashButton.visibility = View.GONE
 
         mPreviewManager = CameraPreviewManager.newPreviewManager(settings)
-        val listener = CameraEventListener(this)
+        val listener = NumberCapturePresenter(context!!, this)
 
         try {
 
@@ -233,32 +229,6 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
         }
     }
 
-    private fun displayDetections(detections: Collection<Detection>) {
-        mOverlay.drawDetections(detections)
-    }
-
-    private fun clearDetections() {
-        mOverlay.drawDetections(null)
-    }
-
-    private fun displayNotFoundNumber(number: CarNumber) {
-        val message = String.format(getString(R.string.unknown_car_message_format), number.toString())
-        context?.apply { Toast.makeText(context, message, Toast.LENGTH_SHORT).show() }
-    }
-
-    private fun showDetails(car: CarDetails) {
-        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-            // We can start the activity
-            val intent = CarDetailsActivity.newIntent(context!!, car)
-            mPendingCarDetails = null
-            startActivity(intent)
-
-        } else {
-            // Remember the details to show when we will be resumed
-            mPendingCarDetails = car
-        }
-    }
-
     private fun hideHintView(flashStatus: Boolean?) {
 
         mHideHintButton = mHintView?.findViewById(R.id.hint_hide_button)
@@ -278,6 +248,54 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
                 putBoolean(SKIP_HINT_KEY, true)?.apply()
     }
 
+    private fun showToast(message: CharSequence, shortDuration: Boolean = true) {
+        if (context != null) {
+            val toast = Toast.makeText(context, message,
+                    if (shortDuration) Toast.LENGTH_SHORT else Toast.LENGTH_LONG)
+            toast.setGravity(Gravity.CENTER_VERTICAL, 0, 0)
+            toast.show()
+        }
+    }
+
+    //  NumberCapturePresenter.View implementation
+    override fun displayDetections(detections: Collection<Detection>) {
+        if (!isHintDisplayed) {
+            mOverlay.drawDetections(detections)
+        }
+    }
+
+    override fun clearDetections() {
+        mOverlay.drawDetections(null)
+    }
+
+    override fun displayNotFoundNumber(number: CarNumber) {
+        if (!isHintDisplayed) {
+            val message = String.format(getString(R.string.unknown_car_message_format), number.toString())
+            showToast(message)
+        }
+    }
+
+    override fun showCarDetails(car: CarDetails) {
+        if (isHintDisplayed) {
+            return
+        }
+
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            // We can start the activity
+            val intent = CarDetailsActivity.newIntent(context!!, car)
+            mPendingCarDetails = null
+            startActivity(intent)
+
+        } else {
+            // Remember the details to show when we will be resumed
+            mPendingCarDetails = car
+        }
+    }
+
+    override fun displayPreviewError(error: Throwable) {
+        showToast(getString(R.string.preview_error_message))
+    }
+
     // ---------------------------------------------------------------------------------------------
     // TextureView.SurfaceTextureListener implementation
     override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture?, width: Int, height: Int) {
@@ -295,175 +313,5 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener {
     override fun onSurfaceTextureUpdated(surface: SurfaceTexture?) = Unit
 
     override fun onSurfaceTextureDestroyed(surface: SurfaceTexture?): Boolean = true
-
-
-    // ---------------------------------------------------------------------------------------------
-    // CameraPreviewManager.CameraPreviewManagerEventListener
-    private class CameraEventListener(parent: CarNumberCaptureFragment):
-            CameraPreviewManager.CameraPreviewManagerEventListener,
-            Detector.Processor<TextBlock> {
-
-        private val mParentRef = WeakReference<CarNumberCaptureFragment>(parent)
-        private val mRecognizer = TextRecognizer.Builder(parent.context).build()
-        private var mStartTime = SystemClock.elapsedRealtime()
-        private var mFrameId = 0
-        private var mCancellable: Cancellable? = null
-        private val mHandler = Handler()
-        private var mLastDetectionsCount = 0
-        private var mDatabase: CarsDatabase? = null
-        private var mIsRecognized = false
-
-        init {
-            mRecognizer.setProcessor(this)
-        }
-
-        override fun onCameraPreviewObtained(imageData: ByteArray, imageSize: Size, imageFormat: Int,
-                frameRotation: Int, cancellable: Cancellable) {
-
-            mCancellable = cancellable
-            if (!mCancellable.canContinue() || mIsRecognized) {
-                return
-            }
-
-            val parent = mParentRef.get()
-            parent ?: return
-
-            val buffer = ByteBuffer.wrap(imageData, 0, imageData.size)
-
-            val frame = Frame.Builder()
-                    .setImageData(buffer, imageSize.width, imageSize.height, imageFormat)
-                    .setId(mFrameId++)
-                    .setTimestampMillis(SystemClock.elapsedRealtime() - mStartTime)
-                    .setRotation(frameRotation)
-                    .build()
-            mRecognizer.receiveFrame(frame)
-        }
-
-        override fun onCameraPreviewError(error: Throwable) {
-
-        }
-
-        override fun release() {
-            if (!mCancellable.canContinue()) {
-                return
-            }
-            mLastDetectionsCount = 0
-
-            postToParent { it.clearDetections() }
-        }
-
-        override fun receiveDetections(detections: Detector.Detections<TextBlock>?) {
-
-            if (!mCancellable.canContinue() || mIsRecognized) {
-                return
-            }
-            // Test only
-            //processText("AE 5432")
-
-            val items = detections?.detectedItems
-            val count = items?.size() ?: 0
-
-            // Don't sequentaly report 0
-            if (count == 0 && mLastDetectionsCount == 0) {
-                return
-            }
-            mLastDetectionsCount = count
-
-            val detectionsList = ArrayList<Detection>(count)
-            for (i in 0 until count) {
-                val block = items!![i]
-                val text = block?.value
-
-                if (!TextUtils.isEmpty(text)) {
-                    detectionsList.add(Detection(text!!, block.boundingBox))
-                }
-            }
-
-            // Post display detections
-            postToParent {
-                it.displayDetections(Collections.unmodifiableCollection(detectionsList))
-            }
-
-            for (detection in detectionsList) {
-                if (processText(detection.text)) {
-                    break
-                }
-            }
-        }
-
-        private fun processText(text: String): Boolean {
-            val number = CarNumber.fromString(text, false)
-            if (number == null || number.isCustom) {
-                return false
-            }
-
-            if (mDatabase == null) {
-                mDatabase = CarsListApplication.application.getCarsListDatabase(mCancellable)
-            }
-
-            val dao = mDatabase?.carsDao() ?: return false
-
-            val matches = dao.loadByNumberRoot(number.root)
-            val car = getMostProperCar(matches, number)
-            if (car != null) {
-                mIsRecognized = true
-                processCar(car)
-                return true
-            }
-
-            processNotFoundNumber(number)
-            return false
-        }
-
-        private fun processCar(car: CarInfo) {
-            val carDetails = CarDetails(car)
-            postToParent{
-                it.showDetails(carDetails)
-            }
-        }
-
-        private fun postToParent(what: (CarNumberCaptureFragment) -> Unit) {
-            val cancellable = mCancellable
-            mHandler.post {
-                if (cancellable.canContinue()) {
-                    val parent = mParentRef.get()
-                    if (parent != null) {
-                        what(parent)
-                    }
-                }
-            }
-        }
-
-        private var mNotFoundNumber: CarNumber? = null
-        private var mNotFoundNumberRecognitions = 0
-        private var mNotfoundNumberStartTime = 0L
-
-        private fun processNotFoundNumber(number: CarNumber) {
-            // If we red the number that can't be found in database, report 'unknown number'
-            // to the client
-
-            if (mNotFoundNumber == null || mNotFoundNumber!!.root != number.root) {
-                // Init new number
-                mNotFoundNumber = number
-                mNotFoundNumberRecognitions = 1
-                mNotfoundNumberStartTime = System.currentTimeMillis()
-
-            } else {
-                // process existed one
-                mNotFoundNumberRecognitions ++
-
-                if (mNotFoundNumberRecognitions > 7 &&
-                        System.currentTimeMillis() - mNotfoundNumberStartTime > 3000) {
-                    // It looks like user points the camera to this number
-
-                    postToParent { it.displayNotFoundNumber(number) }
-                    mNotFoundNumber = null
-                    mNotFoundNumberRecognitions = 0
-                    mNotfoundNumberStartTime = 0
-                }
-            }
-        }
-
-    }
 
 }

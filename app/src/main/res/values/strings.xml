@@ -18,4 +18,5 @@
     <string name="phone_call_failed">Can\'t call phone</string>
 
     <string name="unknown_car_message_format">Unknown car: %s</string>
+    <string name="preview_error_message">Camera error occurred!</string>
 </resources>
