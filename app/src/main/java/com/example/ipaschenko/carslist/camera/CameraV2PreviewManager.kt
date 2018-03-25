@@ -20,6 +20,9 @@ import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import android.graphics.*
 import android.graphics.ImageFormat
+import android.util.Range
+import android.view.View
+import android.view.WindowManager
 import java.nio.ByteBuffer
 
 
@@ -55,6 +58,8 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
     private var mCancellationToken: CancellationToken? = null
     private var mFlashIsOn = false
 
+    private var mLayoutCallback: (()->Unit)? = null
+
     // ---------------------------------------------------------------------------------------------
     // Initialization
     init {
@@ -87,6 +92,10 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
             orientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION)
 
             selectedCameraId = cameraId
+
+            // TODO: Deal with supported FPS
+            val fps = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+            val size = fps.size
 
             // We've found a viable camera and finished setting up member variables,
             // so we don't need to iterate through other available cameras.
@@ -124,6 +133,8 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
         startBackgroutThread()
         var error: Throwable? = null
 
+        val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+
         try {
             // Wait for camera to open - 2.5 seconds is sufficient
             if (!mCameraLock.tryAcquire(2500, TimeUnit.MILLISECONDS)) {
@@ -131,8 +142,21 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
             }
             mEventListener = listener
             mCancellationToken = CancellationToken()
-            mCameraManager.openCamera(mCameraId, CameraStateCallback(textureView.surfaceTexture, listener,
-                    mCancellationToken!!),
+
+            // Determine the frame rotation, assuming we use only back camera
+            var degrees = 0
+            val rotation = windowManager.defaultDisplay.rotation
+            when (rotation) {
+                Surface.ROTATION_0 -> degrees = 0
+                Surface.ROTATION_90 -> degrees = 90
+                Surface.ROTATION_180 -> degrees = 180
+                Surface.ROTATION_270 -> degrees = 270
+            }
+
+            degrees = (cameraOrientation - degrees + 360) % 360
+
+            mCameraManager.openCamera(mCameraId, CameraStateCallback(textureView.surfaceTexture,
+                    degrees / 90,  listener, mCancellationToken!!),
                     mBackgroundHandler)
             mRunning = true
 
@@ -142,19 +166,37 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
             error = e
         }
 
-        error?.apply {
+        if (error != null) {
             stopBackgroundThread()
             reportError(error, mCancellationToken!!)
+        } else {
+
+            parametersSelected(previewSize, if (flashSupported) false else null)
+
+            val layoutListener =  object: View.OnLayoutChangeListener {
+                override fun onLayoutChange(v: View?, left: Int, top: Int, right: Int,
+                            bottom: Int, oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int) {
+
+                    transformSurface(windowManager, textureView)
+                    textureView.removeOnLayoutChangeListener(this)
+                    mLayoutCallback = null
+                }
+            }
+
+            textureView.addOnLayoutChangeListener(layoutListener)
+            mLayoutCallback = {textureView.removeOnLayoutChangeListener(layoutListener)}
         }
-
-
-        parametersSelected(previewSize, if (flashSupported) false else null)
 
     }
 
     @MainThread
     override fun stop() {
+
         if (mRunning) {
+
+            mLayoutCallback?.invoke()
+            mLayoutCallback = null
+
             val handlerThread = mBackgroundThread
             mCancellationToken?.cancel()
 
@@ -223,6 +265,7 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
     }
 
     private fun createCameraPreviewSession(camera: CameraDevice, texture: SurfaceTexture,
+            frameRotation: Int,
             eventListener: CameraPreviewManager.CameraPreviewManagerEventListener,
             cancellationToken: CancellationToken) {
 
@@ -230,8 +273,8 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
         val imageReader = ImageReader.newInstance(previewSize.width, previewSize.height,
                 ImageFormat.YUV_420_888, 2)
 
-        imageReader.setOnImageAvailableListener(ImageAvailableListener(cancellationToken,
-                eventListener), null)
+        imageReader.setOnImageAvailableListener(ImageAvailableListener(frameRotation,
+                cancellationToken, eventListener), null)
 
         mImageReader = imageReader
 
@@ -261,6 +304,8 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
                         } else {
                             builder.set(CaptureRequest.CONTROL_AF_MODE,
                                     CaptureRequest.CONTROL_AF_STATE_ACTIVE_SCAN)
+
+                            builder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(10000, 15000))
 
                             val request = builder.build()
                             mRequestBuilder = builder
@@ -305,10 +350,52 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
         }
     }
 
+    private fun transformSurface(windowManager: WindowManager, textureView: TextureView) {
+
+        val viewWidth = textureView.measuredWidth
+        val viewHeight = textureView.measuredHeight
+
+        var previewWidth = previewSize.width
+        var previewHeight = previewSize.height
+
+        if (viewWidth > viewHeight && previewWidth < previewHeight || viewHeight > viewWidth &&
+                previewHeight < previewWidth) {
+            previewWidth = previewSize.height
+            previewHeight = previewSize.width
+        }
+
+        val rotation = windowManager.defaultDisplay.rotation
+        val matrix = Matrix()
+        val viewRect = RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
+        val bufferRect = RectF(0f, 0f, previewHeight.toFloat(),
+                previewWidth.toFloat())
+
+        val centerX =  (textureView.right - textureView.left) / 2f
+        val centerY = (textureView.bottom - textureView.top) / 2f
+
+        if (Surface.ROTATION_90 == rotation || Surface.ROTATION_270 == rotation) {
+            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
+
+            val scale = Math.max(viewHeight.toFloat() / previewHeight,
+                    viewWidth.toFloat() / previewWidth)
+
+            with(matrix) {
+                setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
+                postScale(scale, scale, centerX, centerY)
+                postRotate((90 * (rotation - 2)).toFloat(), centerX, centerY)
+            }
+        } else if (Surface.ROTATION_180 == rotation) {
+
+            matrix.postRotate(180f, centerX, centerY)
+        }
+
+        textureView.setTransform(matrix)
+    }
 
     // ---------------------------------------------------------------------------------------------
     // CameraDevice.StateCallback implementation
     private inner class CameraStateCallback(private val texture: SurfaceTexture,
+            private val frameRotation: Int,
             private val listener: CameraPreviewManager.CameraPreviewManagerEventListener,
             private val cancellationToken: CancellationToken
             ):
@@ -318,7 +405,8 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
             mCameraLock.release()
 
             if (!cancellationToken.isCancelled) {
-                createCameraPreviewSession(camera!!, texture, listener, cancellationToken)
+                createCameraPreviewSession(camera!!, texture, frameRotation, listener,
+                        cancellationToken)
             } else {
                 camera?.close()
                 releaseCameraPreviewSession()
@@ -345,7 +433,8 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
 
     // ---------------------------------------------------------------------------------------------
     // ImageReader.OnImageAvailableListener implementation
-    private class ImageAvailableListener(private val cancellationToken: CancellationToken,
+    private class ImageAvailableListener(private val frameRotation: Int,
+            private val cancellationToken: CancellationToken,
             listener: CameraPreviewManager.CameraPreviewManagerEventListener):
             ImageReader.OnImageAvailableListener {
 
@@ -408,7 +497,8 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
 //            val imageBytes = out.toByteArray()
 //            val image_ = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
 
-            mFrameProcessor.process(data, Size(image.width, image.height), ImageFormat.NV21, 0)
+            mFrameProcessor.process(data, Size(image.width, image.height), ImageFormat.NV21,
+                    frameRotation)
 
         }
 
