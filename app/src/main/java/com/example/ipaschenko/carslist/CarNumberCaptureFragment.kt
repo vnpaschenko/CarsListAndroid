@@ -177,7 +177,7 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
 
         mToggleFlashButton.visibility = View.GONE
 
-        mPreviewManager = CameraPreviewManager.newPreviewManager(settings)
+        mPreviewManager = CameraPreviewManager.newPreviewManager(activity!!, settings)
         val listener = NumberCapturePresenter(context!!, this)
 
         try {

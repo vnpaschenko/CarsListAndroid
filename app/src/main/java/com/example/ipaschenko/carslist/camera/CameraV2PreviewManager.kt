@@ -2,7 +2,6 @@ package com.example.ipaschenko.carslist.camera
 
 import android.app.Activity
 import android.content.Context
-import android.graphics.ImageFormat
 import android.hardware.camera2.*
 import android.media.Image
 import android.media.ImageReader
@@ -14,24 +13,29 @@ import android.view.Surface
 import android.view.TextureView
 import com.example.ipaschenko.carslist.utils.CancellationToken
 import com.example.ipaschenko.carslist.utils.canContinue
+import java.io.IOException
 
 import java.util.*
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
+import android.graphics.*
+import android.graphics.ImageFormat
+import java.nio.ByteBuffer
+
 
 /**
  * CameraPreviewManager based on camera v2 API
  */
-internal class CameraV2PreviewManager(settings: CameraPreviewSettings, activity: Activity,
-        textureView: TextureView, listener: CameraPreviewManager.CameraPreviewManagerEventListener) {
+internal class CameraV2PreviewManager(activity: Activity, settings: CameraPreviewSettings):
+        CameraPreviewManager {
 
     val previewSize: Size
     val flashSupported: Boolean
     val cameraOrientation: Int
 
     private val mSettings = settings
-    private val mTextureView = textureView
-    private val mEventListener = listener
+
+    private var mEventListener: CameraPreviewManager.CameraPreviewManagerEventListener? = null
 
     private val mCameraManager = activity.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     private val mCameraId: String
@@ -73,7 +77,7 @@ internal class CameraV2PreviewManager(settings: CameraPreviewSettings, activity:
             val map = characteristics.get(
                     CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: continue
 
-            selectedPreviewSize = getBestPreviewSize(map.getOutputSizes(mSettings.imageFormat)) ?:
+            selectedPreviewSize = getBestPreviewSize(map.getOutputSizes(ImageFormat.YUV_420_888)) ?:
                     continue
 
             // Check if the flash is supported.
@@ -106,13 +110,16 @@ internal class CameraV2PreviewManager(settings: CameraPreviewSettings, activity:
         }
     }
 
+
     @MainThread
-    fun start() {
+    @Throws(CameraPreviewManager.CameraException::class, IOException::class)
+    override fun start(context: Context, turnFlash: Boolean, textureView: TextureView,
+              listener: CameraPreviewManager.CameraPreviewManagerEventListener,
+              parametersSelected:(previewSize: Size, flashStatus: Boolean?) -> Unit) {
+
         if (mRunning) {
             return
         }
-
-        mCancellationToken = CancellationToken()
 
         startBackgroutThread()
         var error: Throwable? = null
@@ -122,7 +129,10 @@ internal class CameraV2PreviewManager(settings: CameraPreviewSettings, activity:
             if (!mCameraLock.tryAcquire(2500, TimeUnit.MILLISECONDS)) {
                 throw RuntimeException("Time out waiting to lock camera opening.")
             }
-            mCameraManager.openCamera(mCameraId, CameraStateCallback(mCancellationToken!!),
+            mEventListener = listener
+            mCancellationToken = CancellationToken()
+            mCameraManager.openCamera(mCameraId, CameraStateCallback(textureView.surfaceTexture, listener,
+                    mCancellationToken!!),
                     mBackgroundHandler)
             mRunning = true
 
@@ -136,10 +146,14 @@ internal class CameraV2PreviewManager(settings: CameraPreviewSettings, activity:
             stopBackgroundThread()
             reportError(error, mCancellationToken!!)
         }
+
+
+        parametersSelected(previewSize, if (flashSupported) false else null)
+
     }
 
     @MainThread
-    fun stop() {
+    override fun stop() {
         if (mRunning) {
             val handlerThread = mBackgroundThread
             mCancellationToken?.cancel()
@@ -159,7 +173,7 @@ internal class CameraV2PreviewManager(settings: CameraPreviewSettings, activity:
     }
 
     @MainThread
-    fun toggleFlash() {
+    override fun toggleFlash() {
         if (mRunning && flashSupported) {
             val cancellationToken = mCancellationToken
             mBackgroundHandler?.post {
@@ -203,26 +217,28 @@ internal class CameraV2PreviewManager(settings: CameraPreviewSettings, activity:
 
     private fun reportError(error: Throwable, cancellationToken: CancellationToken) {
         if (!cancellationToken.isCancelled) {
-            mEventListener.onCameraPreviewError(error)
+            mEventListener?.onCameraPreviewError(error)
             cancellationToken.cancel()
         }
     }
 
-    private fun createCameraPreviewSession(camera: CameraDevice, cancellationToken: CancellationToken) {
+    private fun createCameraPreviewSession(camera: CameraDevice, texture: SurfaceTexture,
+            eventListener: CameraPreviewManager.CameraPreviewManagerEventListener,
+            cancellationToken: CancellationToken) {
 
         // Init image reader
         val imageReader = ImageReader.newInstance(previewSize.width, previewSize.height,
-                mSettings.imageFormat, 2)
+                ImageFormat.YUV_420_888, 2)
 
         imageReader.setOnImageAvailableListener(ImageAvailableListener(cancellationToken,
-                mEventListener), null)
+                eventListener), null)
 
         mImageReader = imageReader
 
         mCameraDevice = camera
 
         // Init capture request
-        val texture = mTextureView.surfaceTexture
+
         texture.setDefaultBufferSize(previewSize.width, previewSize.height)
 
         // This is the output Surface we need to start preview.
@@ -289,16 +305,20 @@ internal class CameraV2PreviewManager(settings: CameraPreviewSettings, activity:
         }
     }
 
+
     // ---------------------------------------------------------------------------------------------
     // CameraDevice.StateCallback implementation
-    private inner class CameraStateCallback(private val cancellationToken: CancellationToken):
+    private inner class CameraStateCallback(private val texture: SurfaceTexture,
+            private val listener: CameraPreviewManager.CameraPreviewManagerEventListener,
+            private val cancellationToken: CancellationToken
+            ):
             CameraDevice.StateCallback() {
 
         override fun onOpened(camera: CameraDevice?) {
             mCameraLock.release()
 
             if (!cancellationToken.isCancelled) {
-                createCameraPreviewSession(camera!!, cancellationToken)
+                createCameraPreviewSession(camera!!, texture, listener, cancellationToken)
             } else {
                 camera?.close()
                 releaseCameraPreviewSession()
@@ -346,19 +366,54 @@ internal class CameraV2PreviewManager(settings: CameraPreviewSettings, activity:
         }
 
         private fun processImage(image: Image) {
-            val width = image.width
-            val height = image.height
 
-            val buffer = image.planes[0].buffer
-            val size = buffer.remaining()
-            if (mBytes == null || mBytes!!.size != size) {
-                mBytes = ByteArray(size)
+            val yPlane = image.planes[0]
+            val vPlane = image.planes[2]
+
+            val yBuffer = yPlane.buffer
+            val yLen = yBuffer.remaining()
+
+            val vBuffer = vPlane.buffer
+            val vLen = vBuffer.remaining()
+
+            var data: ByteArray? = null
+
+            if (vPlane.pixelStride == 1) {
+                // planar image
+                val uPlane = image.planes[1]
+                val uBuffer = uPlane.buffer
+                val uLen = uBuffer.remaining()
+                data = ByteArray(yLen + uLen + vLen)
+                yBuffer.get(data, 0, yLen)
+
+                var index = yLen
+                for (i in 0 until vLen) {
+                    data[index++] = vBuffer[i]
+                    data[index++] = uBuffer[i]
+                }
+
+            } else {
+                // Semi-planar image, Use the v plane that corresponds to NV21 format
+                data = ByteArray(yLen + vLen)
+                yBuffer.get(data, 0, yLen)
+
+                val vPart = ByteBuffer.wrap(data, yLen, vLen)
+                vPart.put(vBuffer)
+
             }
 
-            buffer.get(mBytes!!)
-            mFrameProcessor.process(mBytes!!, Size(width, height), image.format, 0)
-         }
+//            val img = YuvImage(data, ImageFormat.NV21, image.width, image.height, null)
+//            val out = ByteArrayOutputStream()
+//            img.compressToJpeg(Rect(0, 0, image.width, image.height), 100, out)
+//            val imageBytes = out.toByteArray()
+//            val image_ = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+
+            mFrameProcessor.process(data, Size(image.width, image.height), ImageFormat.NV21, 0)
+
+        }
+
     }
+
 }
 
 /*
