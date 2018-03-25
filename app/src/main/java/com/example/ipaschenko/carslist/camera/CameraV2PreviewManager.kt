@@ -32,9 +32,9 @@ import java.nio.ByteBuffer
 internal class CameraV2PreviewManager(activity: Activity, settings: CameraPreviewSettings):
         CameraPreviewManager {
 
-    val previewSize: Size
-    val flashSupported: Boolean
-    val cameraOrientation: Int
+    private val mPreviewSize: Size
+    private val mFlashSupported: Boolean
+    private val mCameraOrientation: Int
 
     private val mSettings = settings
 
@@ -106,9 +106,9 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
             throw CameraPreviewManager.CameraNotFoundException()
         } else {
             mCameraId = selectedCameraId
-            previewSize = selectedPreviewSize!!
-            flashSupported =  isFlashSupported ?: false
-            cameraOrientation = orientation ?: 90 // usually 90
+            mPreviewSize = selectedPreviewSize!!
+            mFlashSupported =  isFlashSupported ?: false
+            mCameraOrientation = orientation ?: 90 // usually 90
         }
     }
 
@@ -153,7 +153,7 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
                 Surface.ROTATION_270 -> degrees = 270
             }
 
-            degrees = (cameraOrientation - degrees + 360) % 360
+            degrees = (mCameraOrientation - degrees + 360) % 360
 
             mCameraManager.openCamera(mCameraId, CameraStateCallback(textureView.surfaceTexture,
                     degrees / 90,  listener, mCancellationToken!!),
@@ -171,7 +171,7 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
             reportError(error, mCancellationToken!!)
         } else {
 
-            parametersSelected(previewSize, if (flashSupported) false else null)
+            parametersSelected(mPreviewSize, if (mFlashSupported) false else null)
 
             val layoutListener =  object: View.OnLayoutChangeListener {
                 override fun onLayoutChange(v: View?, left: Int, top: Int, right: Int,
@@ -216,7 +216,7 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
 
     @MainThread
     override fun toggleFlash() {
-        if (mRunning && flashSupported) {
+        if (mRunning && mFlashSupported) {
             val cancellationToken = mCancellationToken
             mBackgroundHandler?.post {
                 if (mCaptureSession != null && mRequestBuilder != null &&
@@ -270,7 +270,7 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
             cancellationToken: CancellationToken) {
 
         // Init image reader
-        val imageReader = ImageReader.newInstance(previewSize.width, previewSize.height,
+        val imageReader = ImageReader.newInstance(mPreviewSize.width, mPreviewSize.height,
                 ImageFormat.YUV_420_888, 2)
 
         imageReader.setOnImageAvailableListener(ImageAvailableListener(frameRotation,
@@ -282,7 +282,7 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
 
         // Init capture request
 
-        texture.setDefaultBufferSize(previewSize.width, previewSize.height)
+        texture.setDefaultBufferSize(mPreviewSize.width, mPreviewSize.height)
 
         // This is the output Surface we need to start preview.
         val surface = Surface(texture)
@@ -355,13 +355,13 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
         val viewWidth = textureView.measuredWidth
         val viewHeight = textureView.measuredHeight
 
-        var previewWidth = previewSize.width
-        var previewHeight = previewSize.height
+        var previewWidth = mPreviewSize.width
+        var previewHeight = mPreviewSize.height
 
         if (viewWidth > viewHeight && previewWidth < previewHeight || viewHeight > viewWidth &&
                 previewHeight < previewWidth) {
-            previewWidth = previewSize.height
-            previewHeight = previewSize.width
+            previewWidth = mPreviewSize.height
+            previewHeight = mPreviewSize.width
         }
 
         val rotation = windowManager.defaultDisplay.rotation
@@ -465,14 +465,15 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
             val vBuffer = vPlane.buffer
             val vLen = vBuffer.remaining()
 
-            var data: ByteArray? = null
-
+            val data: ByteArray
             if (vPlane.pixelStride == 1) {
                 // planar image
                 val uPlane = image.planes[1]
                 val uBuffer = uPlane.buffer
                 val uLen = uBuffer.remaining()
-                data = ByteArray(yLen + uLen + vLen)
+
+
+                data = getData(yLen + uLen + vLen)
                 yBuffer.get(data, 0, yLen)
 
                 var index = yLen
@@ -483,7 +484,7 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
 
             } else {
                 // Semi-planar image, Use the v plane that corresponds to NV21 format
-                data = ByteArray(yLen + vLen)
+                data = getData(yLen + vLen)
                 yBuffer.get(data, 0, yLen)
 
                 val vPart = ByteBuffer.wrap(data, yLen, vLen)
@@ -502,47 +503,13 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
 
         }
 
+        private fun getData(size: Int): ByteArray {
+            if (mBytes == null || mBytes?.size != size) {
+                mBytes = ByteArray(size)
+            }
+
+            return mBytes!!;
+        }
     }
 
 }
-
-/*
-    private fun transformSurface(viewWidth: Int, viewHeight: Int) {
-        activity ?: return
-
-        val previewWidth = mPreviewManager?.previewSize?.width ?: viewWidth
-        val previewHeight = mPreviewManager?.previewSize?.height ?: viewHeight
-
-        if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
-            mTextureView.setAspectRatio(previewWidth, previewHeight)
-        } else {
-            mTextureView.setAspectRatio(previewHeight, previewWidth)
-        }
-
-        val rotation = activity!!.windowManager.defaultDisplay.rotation
-        val matrix = Matrix()
-        val viewRect = RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
-        val bufferRect = RectF(0f, 0f, previewHeight.toFloat(),
-                previewWidth.toFloat())
-
-        val centerX = viewRect.centerX()
-        val centerY = viewRect.centerY()
-
-        if (Surface.ROTATION_90 == rotation || Surface.ROTATION_270 == rotation) {
-            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
-
-            val scale = Math.max(viewHeight.toFloat() / previewHeight,
-                    viewWidth.toFloat() / previewWidth)
-
-            with(matrix) {
-                setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
-                postScale(scale, scale, centerX, centerY)
-                postRotate((90 * (rotation - 2)).toFloat(), centerX, centerY)
-            }
-        } else if (Surface.ROTATION_180 == rotation) {
-            matrix.postRotate(180f, centerX, centerY)
-        }
-
-        mTextureView.setTransform(matrix)
-    }
-    */
