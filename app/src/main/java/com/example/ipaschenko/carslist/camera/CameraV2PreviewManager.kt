@@ -32,28 +32,35 @@ import java.nio.ByteBuffer
 internal class CameraV2PreviewManager(activity: Activity, settings: CameraPreviewSettings):
         CameraPreviewManager {
 
-    private val mPreviewSize: Size
-    private val mFlashSupported: Boolean
-    private val mCameraOrientation: Int
+    val hardwareLevel: Int // Camera device HW level
 
     private val mSettings = settings
 
-    private var mEventListener: CameraPreviewManager.CameraPreviewManagerEventListener? = null
-
+    // Camera info
     private val mCameraManager = activity.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     private val mCameraId: String
 
+    private val mPreviewSize: Size
+    private val mFlashSupported: Boolean
+    private val mCameraOrientation: Int
+    private val mFpsRange: Range<Int>?
+
+    private var mEventListener: CameraPreviewManager.CameraPreviewManagerEventListener? = null
+
+    // Threading stuff
     private val mCameraLock = Semaphore(1)
 
     private var mBackgroundThread: HandlerThread? = null
     private var mBackgroundHandler: Handler? = null
     private val mMainHandler = Handler()
 
+    // Session data, accessed from bg thread only
     private var mCameraDevice: CameraDevice? = null
     private var mRequestBuilder: CaptureRequest.Builder? = null
     private var mCaptureSession: CameraCaptureSession? = null
     private var mImageReader: ImageReader? = null
 
+    // Run data
     private var mRunning = false
     private var mCancellationToken: CancellationToken? = null
     private var mFlashIsOn = false
@@ -63,12 +70,19 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
     // ---------------------------------------------------------------------------------------------
     // Initialization
     init {
+        // Currently we support only ImageFormat.NV21
+        if (settings.imageFormat != ImageFormat.NV21) {
+            throw CameraPreviewManager.PreviewFormatNotSupportedException()
+        }
 
         var selectedPreviewSize: Size? = null
         var selectedCameraId: String? = null
         var isFlashSupported: Boolean? = null
         var orientation: Int? = null
+        var fpsRange: Range<Int>? = null
+        var hwLevel = -1
 
+        // Look for proper LENS_FACING_BACK camera
         for (cameraId in mCameraManager.cameraIdList) {
             val characteristics = mCameraManager.getCameraCharacteristics(cameraId)
 
@@ -93,9 +107,10 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
 
             selectedCameraId = cameraId
 
-            // TODO: Deal with supported FPS
-            val fps = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
-            val size = fps.size
+            hwLevel = characteristics.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL)
+
+            fpsRange = getBestFpsRange(characteristics.get(
+                    CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES))
 
             // We've found a viable camera and finished setting up member variables,
             // so we don't need to iterate through other available cameras.
@@ -109,7 +124,29 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
             mPreviewSize = selectedPreviewSize!!
             mFlashSupported =  isFlashSupported ?: false
             mCameraOrientation = orientation ?: 90 // usually 90
+            mFpsRange = fpsRange;
+            hardwareLevel = hwLevel
         }
+    }
+
+    private fun getBestFpsRange(supportedRanges: Array<Range<Int>>?): Range<Int>? {
+        if (supportedRanges?.isNotEmpty() != true) {
+            return null
+        }
+        var requestedRange = mSettings.requestedFps
+
+        // Find the closest range to requested one
+        var result = supportedRanges.filter { it.contains(requestedRange) }.minBy {
+            requestedRange - it.lower + it.upper - requestedRange }
+
+        // For some devices FPS range reported multiplied by 1000
+        if (result == null) {
+            requestedRange = mSettings.requestedFps * 1000
+            result = supportedRanges.filter { it.contains(requestedRange) }.minBy {
+                requestedRange - it.lower + it.upper - requestedRange }
+        }
+
+        return result
     }
 
     private fun getBestPreviewSize(supportedSizes: Array<Size>?): Size? {
@@ -118,7 +155,6 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
             it.width * it.height <= mSettings.maxPreviewSize
         }
     }
-
 
     @MainThread
     @Throws(CameraPreviewManager.CameraException::class, IOException::class)
@@ -305,7 +341,10 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
                             builder.set(CaptureRequest.CONTROL_AF_MODE,
                                     CaptureRequest.CONTROL_AF_STATE_ACTIVE_SCAN)
 
-                            builder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(10000, 15000))
+                            // Set FPS range if determined
+                            if (mFpsRange != null) {
+                                builder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, mFpsRange)
+                            }
 
                             val request = builder.build()
                             mRequestBuilder = builder
@@ -508,7 +547,7 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
                 mBytes = ByteArray(size)
             }
 
-            return mBytes!!;
+            return mBytes!!
         }
     }
 

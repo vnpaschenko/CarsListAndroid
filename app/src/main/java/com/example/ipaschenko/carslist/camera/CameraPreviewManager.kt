@@ -43,6 +43,7 @@ interface CameraPreviewManager {
     open class CameraException(message: String?): Exception(message) {}
     class CameraNotFoundException(): CameraException("Back camera is not found") {}
     class CameraSettingsException(message: String?): CameraException(message) {}
+    class PreviewFormatNotSupportedException(): CameraException("Preview format is not supported"){}
 
     companion object {
 
