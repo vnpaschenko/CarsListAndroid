@@ -50,9 +50,19 @@ interface CameraPreviewManager {
         /**
          * Preview manager factory method
          */
-        fun newPreviewManager(activity: Activity, settings: CameraPreviewSettings): CameraPreviewManager {
+        fun newPreviewManager(context: Context, settings: CameraPreviewSettings): CameraPreviewManager {
+            var result: CameraPreviewManager? = null
+            try {
+                result = CameraV2PreviewManager(context, settings)
+            } catch (e: CameraException) {
+                // No-op
+            }
 
-            return CameraV2PreviewManager(activity, settings)
+            if (result == null) {
+                result = CameraV1PreviewManager(settings)
+            }
+
+            return result
         }
     }
 

@@ -1,6 +1,5 @@
 package com.example.ipaschenko.carslist.camera
 
-import android.app.Activity
 import android.content.Context
 import android.hardware.camera2.*
 import android.media.Image
@@ -29,7 +28,7 @@ import java.nio.ByteBuffer
 /**
  * CameraPreviewManager based on camera v2 API
  */
-internal class CameraV2PreviewManager(activity: Activity, settings: CameraPreviewSettings):
+internal class CameraV2PreviewManager(context: Context, settings: CameraPreviewSettings):
         CameraPreviewManager {
 
     val hardwareLevel: Int // Camera device HW level
@@ -37,7 +36,7 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
     private val mSettings = settings
 
     // Camera info
-    private val mCameraManager = activity.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+    private val mCameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     private val mCameraId: String
 
     private val mPreviewSize: Size
@@ -124,7 +123,7 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
             mPreviewSize = selectedPreviewSize!!
             mFlashSupported =  isFlashSupported ?: false
             mCameraOrientation = orientation ?: 90 // usually 90
-            mFpsRange = fpsRange;
+            mFpsRange = fpsRange
             hardwareLevel = hwLevel
         }
     }
@@ -193,7 +192,7 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
 
             val stateCallback = CameraStateCallback(textureView.surfaceTexture,
                     degrees / 90,  if (mFlashSupported) turnFlash else null,
-                    listener, mCancellationToken!!)
+                    mBackgroundHandler, listener, mCancellationToken!!)
 
             mCameraManager.openCamera(mCameraId, stateCallback, mBackgroundHandler)
 
@@ -210,8 +209,10 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
             reportError(error, mCancellationToken!!)
         } else {
 
-            parametersSelected(mPreviewSize, if (mFlashSupported) false else null)
+            // Notify that params are applied
+            parametersSelected(mPreviewSize, if (mFlashSupported) turnFlash else null)
 
+            // Schedule surface transformation
             val layoutListener =  object: View.OnLayoutChangeListener {
                 override fun onLayoutChange(v: View?, left: Int, top: Int, right: Int,
                             bottom: Int, oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int) {
@@ -225,7 +226,6 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
             textureView.addOnLayoutChangeListener(layoutListener)
             mLayoutCallback = {textureView.removeOnLayoutChangeListener(layoutListener)}
         }
-
     }
 
     @MainThread
@@ -303,17 +303,14 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
         }
     }
 
-    private fun createCameraPreviewSession(camera: CameraDevice, texture: SurfaceTexture,
-            frameRotation: Int, flashStatus: Boolean?,
-            eventListener: CameraPreviewManager.CameraPreviewManagerEventListener,
-            cancellationToken: CancellationToken) {
+    private fun createCameraPreviewSession(camera: CameraDevice, callback: CameraStateCallback) {
 
         // Init image reader
         val imageReader = ImageReader.newInstance(mPreviewSize.width, mPreviewSize.height,
                 ImageFormat.YUV_420_888, 2)
 
-        imageReader.setOnImageAvailableListener(ImageAvailableListener(frameRotation,
-                cancellationToken, eventListener), null)
+        imageReader.setOnImageAvailableListener(ImageAvailableListener(callback.frameRotation,
+                callback.cancellationToken, callback.listener), null)
 
         mImageReader = imageReader
 
@@ -321,10 +318,10 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
 
         // Init capture request
 
-        texture.setDefaultBufferSize(mPreviewSize.width, mPreviewSize.height)
+        callback.texture.setDefaultBufferSize(mPreviewSize.width, mPreviewSize.height)
 
         // This is the output Surface we need to start preview.
-        val surface = Surface(texture)
+        val surface = Surface(callback.texture)
 
         // We set up a CaptureRequest.Builder with the output Surface.
         val builder = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
@@ -349,24 +346,27 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
                                 builder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, mFpsRange)
                             }
 
-                            // Deal with the initial flash request
-                            if (flashStatus == false) {
-                                mFlashIsOn = false
-                                mRequestBuilder?.set(CaptureRequest.FLASH_MODE,
-                                        CaptureRequest.FLASH_MODE_OFF)
-
-                            } else if (flashStatus == true) {
-                                mFlashIsOn = true
-                                mRequestBuilder?.set(CaptureRequest.FLASH_MODE,
-                                        CaptureRequest.FLASH_MODE_TORCH)
-                            }
-
                             val request = builder.build()
                             mRequestBuilder = builder
                             mCaptureSession = session
 
-                            if (!cancellationToken.isCancelled) {
+                            if (!callback.cancellationToken.isCancelled) {
                                 session.setRepeatingRequest(request, null, null)
+
+                                // Deal with the initial flash request (for some reason setting
+                                // FLASH_MODE_TORCH before preview start doesn't work
+                                if (callback.flashStatus == true) {
+                                    callback.backgroundHandler?.post {
+                                        mFlashIsOn = true
+                                        mRequestBuilder?.set(CaptureRequest.FLASH_MODE,
+                                                CaptureRequest.FLASH_MODE_TORCH)
+                                        mCaptureSession?.setRepeatingRequest(
+                                                mRequestBuilder?.build(), null, null)
+                                    }
+                                } else {
+                                    mFlashIsOn = false
+                                }
+
                             } else {
                                 releaseCameraPreviewSession()
                                 mMainHandler.post {
@@ -380,7 +380,7 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
                         releaseCameraPreviewSession()
                         mMainHandler.post {
                             stopBackgroundThread()
-                            reportError(Exception(), cancellationToken)
+                            reportError(Exception(), callback.cancellationToken)
                         }
 
                     }
@@ -397,6 +397,7 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
             mCameraDevice = null
             mImageReader?.close()
             mImageReader = null
+            mFlashIsOn = false
         } catch (e: InterruptedException) {
             throw RuntimeException("Interrupted while trying to lock camera closing.", e)
         } finally {
@@ -448,19 +449,19 @@ internal class CameraV2PreviewManager(activity: Activity, settings: CameraPrevie
 
     // ---------------------------------------------------------------------------------------------
     // CameraDevice.StateCallback implementation
-    private inner class CameraStateCallback(private val texture: SurfaceTexture,
-            private val frameRotation: Int, private val flashStatus: Boolean?,
-            private val listener: CameraPreviewManager.CameraPreviewManagerEventListener,
-            private val cancellationToken: CancellationToken
-            ):
-            CameraDevice.StateCallback() {
+    private inner class CameraStateCallback(
+            val texture: SurfaceTexture,
+            val frameRotation: Int,
+            val flashStatus: Boolean?,
+            val backgroundHandler: Handler?,
+            val listener: CameraPreviewManager.CameraPreviewManagerEventListener,
+            val cancellationToken: CancellationToken): CameraDevice.StateCallback() {
 
         override fun onOpened(camera: CameraDevice?) {
             mCameraLock.release()
 
             if (!cancellationToken.isCancelled) {
-                createCameraPreviewSession(camera!!, texture, frameRotation, flashStatus, listener,
-                        cancellationToken)
+                createCameraPreviewSession(camera!!, this)
             } else {
                 camera?.close()
                 releaseCameraPreviewSession()
