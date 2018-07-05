@@ -4,7 +4,6 @@ import android.app.Application
 import android.arch.lifecycle.LiveData
 import android.arch.lifecycle.MutableLiveData
 import android.arch.persistence.room.Room
-import android.os.AsyncTask
 import com.example.ipaschenko.carslist.data.*
 import com.example.ipaschenko.carslist.utils.Cancellable
 import com.example.ipaschenko.carslist.utils.canContinue
@@ -65,11 +64,11 @@ class CarsListApplication: Application() {
 
         if (dao.size() == 0) {
 
-            val stream = assets.open("CarsList.csv")
-            val parser = CarsListCsvParser(stream)
-
             database.beginTransaction()
             try {
+                val stream = assets.open("carlist.html")
+                val parser = CarsListHtmlParser(stream)
+
                 for (car in parser) {
                     if (car.numberAttributes.and(NUMBER_ATTRIBUTE_CUSTOM) != 0) {
                         // Custom numbers are not currently supported
@@ -81,6 +80,7 @@ class CarsListApplication: Application() {
                 database.setTransactionSuccessful()
             } catch (e: Throwable) {
                 error = e
+
             } finally {
                 database.endTransaction()
             }

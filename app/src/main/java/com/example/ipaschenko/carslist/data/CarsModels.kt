@@ -23,7 +23,7 @@ fun getMostProperCar(selectedCars: List<CarInfo>?, recognizedNumber: CarNumber):
 
 
 @Entity(tableName = "cars")
-class CarInfo() {
+class CarInfo {
 
     @PrimaryKey(autoGenerate = true)
     var id: Int = 0
