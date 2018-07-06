@@ -1,16 +1,16 @@
 <resources>
     <string name="app_name">Cars List</string>
     <string name="toggle_flash_description">Toggle flash</string>
+    <string name="show_settings_description">Show settings</string>
     <string name="hint_text">Point the camera to the car number</string>
     <string name="got_it_button_title">Got it</string>
-
-    <string name="unsupported_number_message_format">Data contains unsupported number: %s</string>
-    <string name="data_parse_error_message_format">Parse error at line %d</string>
-    <string name="unknown_error_message">Unknown error</string>
-
+    <string name="unsupported_document_structure_message">Data structure is unsupported.</string>
+    <string name="data_parse_error_message">Error reading data file.</string>
+    <string name="data_is_empty_message">Data is empty.</string>
+    <string name="incorrect_value_message">Data contains incorrect values.</string>
+    <string name="unknown_error_message">Error reading data.</string>
     <string name="unavailable_data_message">Data is unavailable!!! Numbers can\'t be processed!!!</string>
     <string name="update_data_error_message">Data can\'t be updated!</string>
-
     <string name="found_car_title">Found Car</string>
     <string name="phone_incorrect_format">Incorrect phone for %s</string>
     <string name="phone_no_permission">App has no permission to call phone</string>
@@ -19,4 +19,10 @@
 
     <string name="unknown_car_message_format">Unknown car: %s</string>
     <string name="preview_error_message">Camera error occurred!</string>
+    <string name="settings_title">Settings</string>
+    <string name="initializing_db_message">Initializing database…</string>
+    <string name="updating_db_message">Updating database…</string>
+    <string name="update_db_title">Update database…</string>
+    <string name="db_status_message_format">%d cars in the list.</string>
+
 </resources>

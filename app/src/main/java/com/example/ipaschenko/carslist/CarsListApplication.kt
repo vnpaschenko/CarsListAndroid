@@ -1,6 +1,7 @@
 package com.example.ipaschenko.carslist
 
 import android.app.Application
+
 import android.arch.lifecycle.LiveData
 import android.arch.lifecycle.MutableLiveData
 import android.arch.persistence.room.Room
@@ -45,11 +46,14 @@ class CarsListApplication: Application() {
         super.onCreate()
         application = this
 
+        mDbStateData.value = DbStatus(DbProcessingState.INITIALIZING, 0, null)
+
         EXECUTOR.execute {
             try {
                 initDatabase()
             } catch (error: Throwable) {
-                mDbStateData.postValue(DbStatus(false, ErrorInfo(error)))
+                mDbStateData.postValue(DbStatus(DbProcessingState.INITIALIZED,
+                        0, ErrorInfo(error)))
             } finally {
                 mDbLock.countDown()
             }
@@ -62,7 +66,9 @@ class CarsListApplication: Application() {
         var error: Throwable? = null
         mDatabase = database
 
-        if (dao.size() == 0) {
+        var recordsCount = dao.size()
+
+        if (recordsCount <= 0) {
 
             database.beginTransaction()
             try {
@@ -76,10 +82,12 @@ class CarsListApplication: Application() {
 
                     }
                     dao.insert(car)
+                    recordsCount ++
                 }
                 database.setTransactionSuccessful()
             } catch (e: Throwable) {
                 error = e
+                recordsCount = 0
 
             } finally {
                 database.endTransaction()
@@ -87,6 +95,6 @@ class CarsListApplication: Application() {
         }
 
         val errorInfo = if (error != null) ErrorInfo(error) else null
-        mDbStateData.postValue(DbStatus(error == null, errorInfo))
+        mDbStateData.postValue(DbStatus(DbProcessingState.INITIALIZED, recordsCount,  errorInfo))
     }
 }

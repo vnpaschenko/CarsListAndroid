@@ -7,8 +7,8 @@ class CarsListParsingException(errorCode: ErrorCode? = null, cause: Throwable? =
         INCORRECT_STRUCTURE,
         EMPTY_DATA,
         INCORRECT_VALUE,
-        UNKNONW_ERROR
+        UNKNOWN_ERROR
     }
 
-    val errorCode = errorCode ?: ErrorCode.UNKNONW_ERROR
+    val errorCode = errorCode ?: ErrorCode.UNKNOWN_ERROR
 }

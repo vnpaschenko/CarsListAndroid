@@ -39,6 +39,8 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
     private lateinit var mOverlay: OverlayView
 
     private lateinit var mToggleFlashButton: View
+    private lateinit var mShowSettingsButton: View
+
     private var mPreviewManager: CameraPreviewManager? = null
 
     private var mHintView: View? = null
@@ -75,13 +77,14 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
         // Setup observer for DB status
         CarsListApplication.application.databaseStatus.observe(this,
                 Observer { status: DbStatus? ->
-                    if (status != null) {
+                    if (status != null && status.processingState in
+                            listOf(DbProcessingState.INITIALIZED, DbProcessingState.UPDATED)) {
                         if (!status.isDataAvailable) {
                             // Data is unavailable, we can't recognize anything
                             val message = getString(R.string.unavailable_data_message)
                             val error = formatDbStatusError(context!!, status.errorInfo?.error)
                             showToast("$message\n$error", false)
-
+                            status.errorInfo?.handled = true
 
                         } else if (status.errorInfo != null && !status.errorInfo.handled) {
                             // Data is available but was not successfully updated
@@ -119,10 +122,13 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
         mToggleFlashButton = view.findViewById(R.id.toggle_flash)
         mToggleFlashButton.applyRoundOutline()
 
+        mShowSettingsButton = view.findViewById(R.id.show_settings)
+        mShowSettingsButton.applyRoundOutline()
+
         mToggleFlashButton.setOnClickListener {
             mPreviewManager?.apply {
                 mPreviewManager!!.toggleFlash()
-                mFlashIsOn = !mFlashIsOn;
+                mFlashIsOn = !mFlashIsOn
                 mToggleFlashButton.isSelected = mFlashIsOn
             }
         }
@@ -144,11 +150,19 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
             mHintView?.visibility = View.VISIBLE
             mHideHintButton?.setOnClickListener {
                 hideHintView(null)
+
             }
 
             mOverlay.visibility = View.GONE
+            mShowSettingsButton.visibility = View.GONE
         }
 
+        mShowSettingsButton.setOnClickListener {
+
+            context?.apply {
+                this.startActivity(SettingsActivity.newIntent(this))
+            }
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -275,6 +289,8 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
             mToggleFlashButton.visibility = View.VISIBLE
             mToggleFlashButton.isSelected = flashStatus
         }
+
+        mShowSettingsButton.visibility = View.VISIBLE
 
         context?.getSharedPreferences(SHARED_PREFS_NAME, Context.MODE_PRIVATE)?.edit()?.
                 putBoolean(SKIP_HINT_KEY, true)?.apply()

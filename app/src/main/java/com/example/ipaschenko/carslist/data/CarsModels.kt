@@ -4,6 +4,7 @@ import android.arch.persistence.room.*
 import android.content.Context
 import android.os.Parcel
 import android.os.Parcelable
+import java.util.concurrent.locks.Lock
 
 const val NUMBER_ATTRIBUTE_CUSTOM = 1.shl(0)
 
@@ -61,4 +62,8 @@ interface CarsDao {
 @Database(entities = arrayOf(CarInfo::class), version = 1, exportSchema = false)
 abstract class CarsDatabase : RoomDatabase() {
     abstract fun carsDao(): CarsDao
+}
+
+class CarsDatabaseHolder(val database: CarsDatabase, private val lock: Lock) {
+    fun release() = lock.unlock()
 }

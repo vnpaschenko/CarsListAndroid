@@ -30,6 +30,23 @@
         android:clipToPadding="false"
         />
 
+    <android.support.v7.widget.AppCompatImageButton
+        android:id="@+id/show_settings"
+        android:contentDescription="@string/show_settings_description"
+        style="@android:style/Widget.Material.Light.Button.Borderless"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:layout_gravity="end|bottom"
+        android:layout_marginTop="12dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="26dp"
+        android:src="@drawable/button_settings"
+        android:background="@drawable/button_light_background"
+        android:stateListAnimator="@animator/button_elevation"
+        android:clipToPadding="false"
+        />
+
+
     <include layout="@layout/view_hint"/>
 
 </FrameLayout>
