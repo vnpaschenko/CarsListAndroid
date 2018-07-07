@@ -4,13 +4,13 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <com.example.ipaschenko.carslist.views.AutoFitTextureView
+    <com.vnp.vision.carslist.views.AutoFitTextureView
         android:id="@+id/texture"
         android:layout_gravity="center"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"/>
 
-    <com.example.ipaschenko.carslist.views.OverlayView
+    <com.vnp.vision.carslist.views.OverlayView
         android:id="@+id/overlay"
         android:layout_gravity="center"
         android:layout_width="match_parent"
