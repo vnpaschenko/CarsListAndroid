@@ -39,10 +39,15 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
     private lateinit var mOverlay: OverlayView
 
     private lateinit var mToggleFlashButton: View
+    private lateinit var mShowSettingsButton: View
+
     private var mPreviewManager: CameraPreviewManager? = null
 
     private var mHintView: View? = null
     private var mHideHintButton: View? = null
+
+    private var mFlashIsOn: Boolean = false
+    private var mFlashOnTime = 0L
 
     private val isHintDisplayed: Boolean
         get() = mHideHintButton != null
@@ -53,24 +58,33 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
         private const val CAMERA_PERMISSION_REQUEST = 2018
         private const val SKIP_HINT_KEY = "CarNumberCaptureFragment-SkipHint"
         private const val PENDING_DETAILS_KEY = "CarNumberCaptureFragment-PendingDetails"
+        private const val FLASH_ON_KEY = "CarNumberCaptureFragment-FlashOn"
+        private const val FLASH_ON_TIME_KEY = "CarNumberCaptureFragment-FlashOnTime"
+        private const val FLASH_DATE_TOLERANCE = 5000L // 5 sec
 
         @JvmStatic
         fun newInstance(): CarNumberCaptureFragment = CarNumberCaptureFragment()
     }
 
-    override fun onAttach(context: Context?) {
-        super.onAttach(context)
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        if (savedInstanceState != null) {
+            mPendingCarDetails = savedInstanceState.getParcelable(PENDING_DETAILS_KEY)
+            mFlashOnTime = savedInstanceState.getLong(FLASH_ON_TIME_KEY)
+            mFlashIsOn = savedInstanceState.getBoolean(FLASH_ON_KEY)
+        }
 
         // Setup observer for DB status
         CarsListApplication.application.databaseStatus.observe(this,
                 Observer { status: DbStatus? ->
-                    if (status != null) {
+                    if (status != null && status.processingState in
+                            listOf(DbProcessingState.INITIALIZED, DbProcessingState.UPDATED)) {
                         if (!status.isDataAvailable) {
                             // Data is unavailable, we can't recognize anything
                             val message = getString(R.string.unavailable_data_message)
                             val error = formatDbStatusError(context!!, status.errorInfo?.error)
                             showToast("$message\n$error", false)
-
+                            status.errorInfo?.handled = true
 
                         } else if (status.errorInfo != null && !status.errorInfo.handled) {
                             // Data is available but was not successfully updated
@@ -85,6 +99,17 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
         )
     }
 
+    override fun onAttach(context: Context?) {
+        super.onAttach(context)
+
+        val settings = CameraPreviewSettings(ImageFormat.NV21, 1024 * 768) // 1280x720?
+        // Initialize the preview manager
+        if (mPreviewManager == null) {
+            mPreviewManager = CameraPreviewManager.newPreviewManager(context!!.applicationContext,
+                    settings)
+        }
+    }
+
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?,
                               savedInstanceState: Bundle?): View? =
             inflater.inflate(R.layout.fragment_car_number_capture, container, false)
@@ -97,10 +122,14 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
         mToggleFlashButton = view.findViewById(R.id.toggle_flash)
         mToggleFlashButton.applyRoundOutline()
 
+        mShowSettingsButton = view.findViewById(R.id.show_settings)
+        mShowSettingsButton.applyRoundOutline()
+
         mToggleFlashButton.setOnClickListener {
             mPreviewManager?.apply {
                 mPreviewManager!!.toggleFlash()
-                mToggleFlashButton.isSelected = !mToggleFlashButton.isSelected
+                mFlashIsOn = !mFlashIsOn
+                mToggleFlashButton.isSelected = mFlashIsOn
             }
         }
         mToggleFlashButton.visibility = View.GONE
@@ -121,12 +150,19 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
             mHintView?.visibility = View.VISIBLE
             mHideHintButton?.setOnClickListener {
                 hideHintView(null)
+
             }
 
             mOverlay.visibility = View.GONE
+            mShowSettingsButton.visibility = View.GONE
         }
 
-        mPendingCarDetails = savedInstanceState?.getParcelable(PENDING_DETAILS_KEY)
+        mShowSettingsButton.setOnClickListener {
+
+            context?.apply {
+                this.startActivity(SettingsActivity.newIntent(this))
+            }
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -137,6 +173,8 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
         if (mPendingCarDetails != null) {
             outState.putParcelable(PENDING_DETAILS_KEY, mPendingCarDetails)
         }
+        outState.putBoolean(FLASH_ON_KEY, mFlashIsOn)
+        outState.putLong(FLASH_ON_TIME_KEY, mFlashOnTime)
     }
 
     override fun onResume() {
@@ -148,7 +186,12 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
             mPendingCarDetails = null
             startActivity(intent)
 
+            // Reset flash status
+            mFlashIsOn = false
+
         } else if (mTextureView.isAvailable) {
+
+
             // Our texture is available, start preview
             startPreview()
         }
@@ -157,8 +200,8 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
     override fun onPause() {
         super.onPause()
         mPreviewManager?.stop()
-        mPreviewManager = null
         clearDetections()
+        mFlashOnTime = System.currentTimeMillis()
     }
 
     private fun startPreview() {
@@ -173,16 +216,18 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
     }
 
     private fun startPreviewManager() {
-        val settings = CameraPreviewSettings(ImageFormat.NV21, 1024 * 768) // 1280x720?
+
+        // If we was paused too long, reset flash
+        if (mFlashIsOn && System.currentTimeMillis() - mFlashOnTime > FLASH_DATE_TOLERANCE) {
+            mFlashIsOn = false
+        }
 
         mToggleFlashButton.visibility = View.GONE
 
-        mPreviewManager = CameraPreviewManager.newPreviewManager(settings)
         val listener = NumberCapturePresenter(context!!, this)
 
         try {
-
-            mPreviewManager!!.start(context!!, false, mTextureView, listener,
+            mPreviewManager?.start(context!!, mFlashIsOn, mTextureView, listener,
             { previewSize, flashStatus ->
 
                 if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
@@ -198,13 +243,14 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
                 } else if (flashStatus != null) {
                     mToggleFlashButton.visibility = View.VISIBLE
                     mToggleFlashButton.isSelected = flashStatus
+                    mFlashIsOn = flashStatus
                 }
 
                 mOverlay.previewSize = previewSize
 
             })
         } catch (e: Throwable) {
-            mPreviewManager = null
+
             listener.onCameraPreviewError(e)
         }
 
@@ -243,6 +289,8 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
             mToggleFlashButton.visibility = View.VISIBLE
             mToggleFlashButton.isSelected = flashStatus
         }
+
+        mShowSettingsButton.visibility = View.VISIBLE
 
         context?.getSharedPreferences(SHARED_PREFS_NAME, Context.MODE_PRIVATE)?.edit()?.
                 putBoolean(SKIP_HINT_KEY, true)?.apply()
@@ -285,6 +333,7 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
             val intent = CarDetailsActivity.newIntent(context!!, car)
             mPendingCarDetails = null
             startActivity(intent)
+            mFlashIsOn = false
 
         } else {
             // Remember the details to show when we will be resumed

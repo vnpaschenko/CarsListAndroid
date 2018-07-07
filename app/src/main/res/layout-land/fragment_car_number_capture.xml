@@ -22,7 +22,7 @@
         style="@android:style/Widget.Material.Light.Button.Borderless"
         android:layout_width="64dp"
         android:layout_height="64dp"
-        android:layout_gravity="center_horizontal|bottom"
+        android:layout_gravity="center_vertical|end"
         android:layout_margin="12dp"
         android:src="@drawable/button_light_selector"
         android:background="@drawable/button_light_background"
@@ -32,20 +32,18 @@
 
     <android.support.v7.widget.AppCompatImageButton
         android:id="@+id/show_settings"
-        android:contentDescription="@string/show_settings_description"
         style="@android:style/Widget.Material.Light.Button.Borderless"
         android:layout_width="36dp"
         android:layout_height="36dp"
-        android:layout_gravity="end|bottom"
+        android:layout_gravity="end|top"
+        android:layout_marginBottom="12dp"
+        android:layout_marginEnd="26dp"
         android:layout_marginTop="12dp"
-        android:layout_marginEnd="12dp"
-        android:layout_marginBottom="26dp"
-        android:src="@drawable/button_settings"
         android:background="@drawable/button_light_background"
-        android:stateListAnimator="@animator/button_elevation"
         android:clipToPadding="false"
-        />
-
+        android:contentDescription="@string/show_settings_description"
+        android:src="@drawable/button_settings"
+        android:stateListAnimator="@animator/button_elevation" />
 
     <include layout="@layout/view_hint"/>
 

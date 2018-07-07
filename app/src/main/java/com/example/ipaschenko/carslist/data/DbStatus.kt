@@ -8,21 +8,44 @@ import com.example.ipaschenko.carslist.R
 class UnsupportedNumberException(val number: String): Exception()
 
 // Database status
-data class ErrorInfo(val error: Throwable, var handled: Boolean = false)
-data class DbStatus(val isDataAvailable: Boolean, val errorInfo: ErrorInfo?)
+class ErrorInfo(val error: Throwable, var handled: Boolean = false)
+
+enum class DbProcessingState {
+    INITIALIZING,
+    INITIALIZED,
+    UPDATING,
+    UPDATED
+}
+
+class DbStatus(val processingState: DbProcessingState, val availableRecordsCount: Int,
+               val errorInfo: ErrorInfo?) {
+    val isDataAvailable: Boolean
+        get() = this.availableRecordsCount > 0
+}
 
 /**
  * Format Db status error to human readable string
  */
-fun formatDbStatusError(context: Context, error: Throwable?): String =
-    when (error) {
-        is UnsupportedNumberException ->
-            String.format(context.getString(R.string.unsupported_number_message_format),
-                    error.number)
+fun formatDbStatusError(context: Context, error: Throwable?): String {
+    var message: String? = null
 
-        is CarsListCsvParser.ParseException->
-            String.format(context.getString(R.string.data_parse_error_message_format),
-                    error.lineNumber)
-
-        else -> error?.localizedMessage ?: context.getString(R.string.unknown_error_message)
+    if (error is CarsListParsingException) {
+        when (error.errorCode) {
+            CarsListParsingException.ErrorCode.PARSING_ERROR ->
+                message = context.getString(R.string.data_parse_error_message)
+            CarsListParsingException.ErrorCode.INCORRECT_STRUCTURE ->
+                message = context.getString(R.string.unsupported_document_structure_message)
+            CarsListParsingException.ErrorCode.EMPTY_DATA ->
+                message = context.getString(R.string.data_is_empty_message)
+            CarsListParsingException.ErrorCode.INCORRECT_VALUE ->
+                message = context.getString(R.string.incorrect_value_message)
+            else ->
+                message = context.getString(R.string.unknown_error_message)
+        }
+    } else if (error is UnsupportedNumberException) {
+        message = String.format(context.getString(R.string.unsupported_number_message_format),
+                error.number)
     }
+
+    return message ?: context.getString(R.string.unknown_error_message)
+}

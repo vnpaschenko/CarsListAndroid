@@ -49,7 +49,8 @@ class NumberCapturePresenter(context: Context, view: View):
     private var mCancellable: Cancellable? = null
     private val mHandler = Handler()
     private var mLastDetectionsCount = 0
-    private var mDatabase: CarsDatabase? = null
+
+    private var mDatabaseHolder: CarsDatabaseHolder? = null
     private var mIsRecognized = false
 
     init {
@@ -134,14 +135,21 @@ class NumberCapturePresenter(context: Context, view: View):
             return false
         }
 
-        if (mDatabase == null) {
-            mDatabase = CarsListApplication.application.getCarsListDatabase(mCancellable)
+        if (mDatabaseHolder == null) {
+            mDatabaseHolder = CarsListApplication.application.getCarsListDatabase(mCancellable)
         }
 
-        val dao = mDatabase?.carsDao() ?: return false
+        if (mDatabaseHolder == null) {
+            return false
+        }
 
-        val matches = dao.loadByNumberRoot(number.root)
-        val car = getMostProperCar(matches, number)
+        var carMatches: List<CarInfo>? = null
+        mDatabaseHolder!!.read {
+            val dao = it.carsDao()
+            carMatches = dao.loadByNumberRoot(number.root)
+        }
+
+        val car = getMostProperCar(carMatches, number)
         if (car != null) {
             mIsRecognized = true
             processCar(car)

@@ -7,7 +7,7 @@ data class CarNumber(val prefix: String?, val root: String, val suffix: String?,
                       val isCustom: Boolean) {
 
     fun matchWithParts(desiredPrefix: String?, desiredSuffix: String?): Int {
-        var result = 0;
+        var result = 0
         if (prefix != null && desiredPrefix != null) {
             result += matchParts(desiredPrefix, prefix, true)
         }

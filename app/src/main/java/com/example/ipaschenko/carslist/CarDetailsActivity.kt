@@ -15,6 +15,10 @@ import android.widget.Toast
 import com.example.ipaschenko.carslist.data.CarDetails
 import com.example.ipaschenko.carslist.views.applyRoundOutline
 
+/**
+ * Activity to show recognized car details.
+ * TODO: Use frqagments
+ */
 class CarDetailsActivity : AppCompatActivity() {
 
     companion object {
@@ -68,9 +72,10 @@ class CarDetailsActivity : AppCompatActivity() {
 
         if (requestCode == PHONE_PERMISSION_REQUEST) {
             if (grantResults.size != 1 || grantResults[0] != PackageManager.PERMISSION_GRANTED) {
-                Toast.makeText(this, R.string.phone_no_permission, Toast.LENGTH_LONG).show()
+                // No permission to call, open dialer
+                performOwnerCall(Intent.ACTION_DIAL)
             } else {
-                performOwnerCall()
+                performOwnerCall(Intent.ACTION_CALL)
             }
         } else {
             super.onRequestPermissionsResult(requestCode, permissions, grantResults)
@@ -82,6 +87,7 @@ class CarDetailsActivity : AppCompatActivity() {
 
         var hasPermission = true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            // Do we have permission for phone call?
             val permission = ContextCompat.checkSelfPermission(this,
                     Manifest.permission.CALL_PHONE)
             if (permission != PackageManager.PERMISSION_GRANTED) {
@@ -91,12 +97,11 @@ class CarDetailsActivity : AppCompatActivity() {
         }
 
         if (hasPermission) {
-            performOwnerCall()
+            performOwnerCall(Intent.ACTION_CALL)
         }
-
     }
 
-    private fun performOwnerCall() {
+    private fun performOwnerCall(action: String) {
         val phoneUri = phoneUri()
         if (phoneUri == null) {
             val message = String.format(getString(R.string.phone_incorrect_format), mCarDetails.owner)
@@ -104,7 +109,7 @@ class CarDetailsActivity : AppCompatActivity() {
             return
         }
 
-        val callIntent = Intent(Intent.ACTION_CALL)
+        val callIntent = Intent(action)
         callIntent.data = phoneUri
         try {
             startActivity(callIntent)

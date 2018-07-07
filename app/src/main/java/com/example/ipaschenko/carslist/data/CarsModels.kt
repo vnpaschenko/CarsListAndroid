@@ -1,9 +1,7 @@
 package com.example.ipaschenko.carslist.data
 
 import android.arch.persistence.room.*
-import android.content.Context
-import android.os.Parcel
-import android.os.Parcelable
+import java.util.concurrent.locks.ReadWriteLock
 
 const val NUMBER_ATTRIBUTE_CUSTOM = 1.shl(0)
 
@@ -23,7 +21,7 @@ fun getMostProperCar(selectedCars: List<CarInfo>?, recognizedNumber: CarNumber):
 
 
 @Entity(tableName = "cars")
-class CarInfo() {
+class CarInfo {
 
     @PrimaryKey(autoGenerate = true)
     var id: Int = 0
@@ -61,4 +59,39 @@ interface CarsDao {
 @Database(entities = arrayOf(CarInfo::class), version = 1, exportSchema = false)
 abstract class CarsDatabase : RoomDatabase() {
     abstract fun carsDao(): CarsDao
+}
+
+class CarsDatabaseHolder(private val database: CarsDatabase, private val lock: ReadWriteLock) {
+    fun lockRead(): CarsDatabase {
+        lock.readLock().lock();
+        return database;
+    }
+
+    fun unlockRead() = lock.readLock().unlock();
+
+    inline fun read(block: (CarsDatabase) -> Unit) {
+        val db = lockRead()
+        try {
+            block(db)
+        } finally {
+            unlockRead();
+        }
+    }
+
+    fun lockWrite(): CarsDatabase {
+        lock.writeLock().lock();
+        return database;
+    }
+
+    fun unlockWrite() = lock.writeLock().unlock();
+
+    inline fun write(block: (CarsDatabase) -> Unit) {
+        val db = lockWrite()
+        try {
+            block(db)
+        } finally {
+            unlockWrite();
+        }
+    }
+
 }
