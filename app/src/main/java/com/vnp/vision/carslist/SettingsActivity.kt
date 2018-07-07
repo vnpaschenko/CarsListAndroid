@@ -79,9 +79,11 @@ class SettingsActivity : AppCompatActivity() {
                 displayProgress(getString(R.string.updating_db_message))
             DbProcessingState.INITIALIZED, DbProcessingState.UPDATED -> {
                 displayRecordsCount(status.availableRecordsCount)
+
                 if (status.errorInfo != null && !status.errorInfo.handled) {
                     displayError(status.errorInfo.error)
-                    status.errorInfo.handled = true
+                } else {
+                    hideProgress()
                 }
             }
         }
@@ -98,13 +100,14 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun displayRecordsCount(count: Int) {
-        progressLayout.visibility = View.INVISIBLE
+      dbStatusText.text = String.format(getString(R.string.db_status_message_format), count)
+    }
 
-        dbStatusText.text = String.format(getString(R.string.db_status_message_format), count)
+    private fun hideProgress() {
+        progressLayout.visibility = View.INVISIBLE
     }
 
     private fun displayError(error: Throwable) {
-        progressLayout.visibility = View.INVISIBLE
 
         if (fragmentManager.findFragmentByTag(ErrorDialogFragment.TAG) == null) {
             ErrorDialogFragment.newInstance(error).show(fragmentManager, ErrorDialogFragment.TAG)
@@ -135,6 +138,16 @@ class SettingsActivity : AppCompatActivity() {
                     .setPositiveButton(R.string.ok_button_title) {_,_->  }
 
             return builder.create()
+        }
+
+        override fun onResume() {
+            super.onResume()
+            (activity as? SettingsActivity)?.hideProgress()
+        }
+
+        override fun onStop() {
+            super.onStop()
+            (activity as? SettingsActivity)?.hideProgress()
         }
     }
 
