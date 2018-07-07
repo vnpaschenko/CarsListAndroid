@@ -55,6 +55,9 @@ class SettingsActivity : AppCompatActivity() {
             startActivityForResult(Intent.createChooser(intent, "Select a File to Open"),
                     SELECT_UPDATE_FILE_CODE)
         }
+
+        val versionText: TextView = findViewById(R.id.app_version_text)
+        versionText.text = "${getString(R.string.app_name)} v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
