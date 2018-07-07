@@ -73,7 +73,8 @@ class CarsListHtmlParser (inputStream: InputStream, charset: String = "utf8"): I
             val columns = tableRows[currentRow].children()
             moveToNextRow(true)
 
-            // Fill the Car Info
+            // Fill the Car Info. As column headers are human readable, we will not parce them,
+            // but rely to columns order
             val carInfo = CarInfo()
             try {
                 val rawNumber = columns[4].textValue

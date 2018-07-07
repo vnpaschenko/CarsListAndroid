@@ -11,7 +11,7 @@ class CarsListHtmlParserTest {
     @Test
     fun testParsing() {
         val context = InstrumentationRegistry.getTargetContext()
-        val stream = context.assets.open("CarsList.csv")
+        val stream = context.assets.open("carlist.html")
         val parser = CarsListHtmlParser(stream)
     }
 }
