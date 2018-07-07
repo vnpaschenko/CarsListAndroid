@@ -8,6 +8,7 @@
     <string name="data_parse_error_message">Error reading data file.</string>
     <string name="data_is_empty_message">Data is empty.</string>
     <string name="incorrect_value_message">Data contains incorrect values.</string>
+    <string name="unsupported_number_message_format">Data contains unsupported number: %s.</string>
     <string name="unknown_error_message">Error reading data.</string>
     <string name="unavailable_data_message">Data is unavailable!!! Numbers can\'t be processed!!!</string>
     <string name="update_data_error_message">Data can\'t be updated!</string>
@@ -22,7 +23,9 @@
     <string name="settings_title">Settings</string>
     <string name="initializing_db_message">Initializing database…</string>
     <string name="updating_db_message">Updating database…</string>
-    <string name="update_db_title">Update database…</string>
+    <string name="update_db_title">Load Update</string>
     <string name="db_status_message_format">%d cars in the list.</string>
+    <string name="error_alert_title">Oops!!!</string>
+    <string name="ok_button_title">OK</string>
 
 </resources>

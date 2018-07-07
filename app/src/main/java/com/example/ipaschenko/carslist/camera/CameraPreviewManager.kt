@@ -1,8 +1,6 @@
 package com.example.ipaschenko.carslist.camera
 
-import android.app.Activity
 import android.content.Context
-import android.graphics.ImageFormat
 import android.support.annotation.MainThread
 import android.support.annotation.WorkerThread
 import android.util.Size
@@ -23,8 +21,6 @@ interface CameraPreviewManager {
         /**
          * Called when preview image is available
          * @param imageData Raw image bytes
-         * @param width image width
-         * @param height image height
          * @param imageFormat Image format, see {@link android.graphics.ImageFormat}
          * @param cancellable Can be used to determine that the preview is cancelled
          */

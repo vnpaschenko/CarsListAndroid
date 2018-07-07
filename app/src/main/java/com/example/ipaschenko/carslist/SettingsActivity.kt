@@ -1,6 +1,9 @@
 package com.example.ipaschenko.carslist
 
 import android.app.Activity
+import android.app.AlertDialog
+import android.app.Dialog
+import android.app.DialogFragment
 import android.arch.lifecycle.Observer
 import android.content.Context
 import android.content.Intent
@@ -11,6 +14,7 @@ import android.widget.Button
 import android.widget.TextView
 import com.example.ipaschenko.carslist.data.DbProcessingState
 import com.example.ipaschenko.carslist.data.DbStatus
+import com.example.ipaschenko.carslist.data.formatDbStatusError
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -58,6 +62,9 @@ class SettingsActivity : AppCompatActivity() {
 
         if (requestCode == SELECT_UPDATE_FILE_CODE && resultCode == Activity.RESULT_OK) {
             val uri = data?.data
+            if (uri != null) {
+                CarsListApplication.application.updateDatabase(uri)
+            }
         }
     }
 
@@ -71,7 +78,7 @@ class SettingsActivity : AppCompatActivity() {
                 displayRecordsCount(status.availableRecordsCount)
                 if (status.errorInfo != null && !status.errorInfo.handled) {
                     displayError(status.errorInfo.error)
-                    status.errorInfo.handled = true;
+                    status.errorInfo.handled = true
                 }
             }
         }
@@ -83,18 +90,49 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun displayProgress(message: String) {
-        progressText.text = message;
+        progressText.text = message
         progressLayout.visibility = View.VISIBLE
     }
 
     private fun displayRecordsCount(count: Int) {
         progressLayout.visibility = View.INVISIBLE
 
-        dbStatusText.text = String.format(getString(R.string.db_status_message_format), count);
+        dbStatusText.text = String.format(getString(R.string.db_status_message_format), count)
     }
 
     private fun displayError(error: Throwable) {
+        progressLayout.visibility = View.INVISIBLE
 
+        if (fragmentManager.findFragmentByTag(ErrorDialogFragment.TAG) == null) {
+            ErrorDialogFragment.newInstance(error).show(fragmentManager, ErrorDialogFragment.TAG)
+        }
+    }
+
+    class ErrorDialogFragment: DialogFragment() {
+
+        companion object {
+           fun newInstance(error: Throwable): ErrorDialogFragment {
+               val fragment = ErrorDialogFragment()
+               val args = Bundle()
+               args.putSerializable(ERROR_KEY, error)
+               fragment.arguments = args
+               return fragment;
+           }
+           private const val ERROR_KEY = "Error"
+           const val TAG = "ErrorDialogFragment"
+        }
+
+
+        override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
+            val builder = AlertDialog.Builder(activity!!)
+
+            val error: Throwable? = arguments?.getSerializable(ERROR_KEY) as? Throwable
+            val message = formatDbStatusError(activity, error)
+            builder.setTitle(R.string.error_alert_title).setMessage(message)
+                    .setPositiveButton(R.string.ok_button_title) {_,_->  }
+
+            return builder.create()
+        }
     }
 
 }

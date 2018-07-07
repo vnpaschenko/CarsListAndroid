@@ -42,8 +42,10 @@ fun formatDbStatusError(context: Context, error: Throwable?): String {
             else ->
                 message = context.getString(R.string.unknown_error_message)
         }
+    } else if (error is UnsupportedNumberException) {
+        message = String.format(context.getString(R.string.unsupported_number_message_format),
+                error.number)
     }
-
 
     return message ?: context.getString(R.string.unknown_error_message)
 }

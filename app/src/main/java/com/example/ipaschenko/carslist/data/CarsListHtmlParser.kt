@@ -55,8 +55,8 @@ class CarsListHtmlParser (inputStream: InputStream, charset: String = "utf8"): I
 
             while (currentRow < rowsCount) {
                 val columns = tableRows[currentRow].children()
-                if (columns.size < 5 ||  columns[0].tagName().equals("th")) {
-                    currentRow ++;
+                if (columns.size < 5 || columns[0].tagName() == "th") {
+                    currentRow ++
                 } else {
                     break
                 }
