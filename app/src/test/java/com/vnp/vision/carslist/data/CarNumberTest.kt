@@ -6,12 +6,20 @@ import org.junit.Test
 /**
  * CarNumber creation tests
  */
-class CarNumberTest {
+class
+CarNumberTest {
     @Test
     fun testCreation() {
         // Standard Ukrainian
-        var str = "АИ 1234 се"
+        var str = "12 1234FU"
         var number = CarNumber.fromString(str, true)
+        assertEquals(number!!.root, "1234FU")
+        assertEquals(number.prefix!!, "12")
+        assertNull(number.suffix)
+        assertFalse(number.isCustom)
+
+        str = "АИ 1234 се"
+        number = CarNumber.fromString(str, true)
         assertEquals(number!!.root, "1234")
         assertEquals(number.prefix!!, "A*")
         assertEquals(number.suffix!!, "CE")

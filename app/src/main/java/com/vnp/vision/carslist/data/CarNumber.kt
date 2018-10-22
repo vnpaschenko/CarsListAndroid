@@ -40,7 +40,10 @@ data class CarNumber(val prefix: String?, val root: String, val suffix: String?,
          * number symbols can be Cyrillic (text recognition lib deals only with latin)
          */
         fun fromString(data: String, translateCyrillic: Boolean): CarNumber? {
-            val components = data.split(" ", "\t", "-")
+
+            val components = (if (translateCyrillic)
+                data.split(" ", "\t", "-") else data.split(SPLIT_REGEX)).filter { it.isNotEmpty() }
+
             val count = components.count()
             var prefix: String? = null
             var root: String?
@@ -52,7 +55,7 @@ data class CarNumber(val prefix: String?, val root: String, val suffix: String?,
                 1 -> {
                     root = components.first()
                     if (root.length < 3) return null
-                    if (!root.containsOnlyNumbers) {
+                    if (!root.containsSequentalNumbers(3)) {
                         // root has letters, the number is custom
                         root = normalize(root, translateCyrillic)
                         custom = true
@@ -61,7 +64,7 @@ data class CarNumber(val prefix: String?, val root: String, val suffix: String?,
                 else -> {
                     // Look for the part that contains from 3-4 digits and assume it as root
                     var rootIndex = components.indexOfFirst {
-                        it.length in (3..5) && it.indexOfFirst { !it.isDigit() } == -1
+                        it.length in (3..7) && it.containsSequentalNumbers(3)
                     }
 
                     if (rootIndex != -1) {
@@ -90,6 +93,8 @@ data class CarNumber(val prefix: String?, val root: String, val suffix: String?,
 
             return CarNumber(prefix, root, suffix, custom)
         }
+
+        private val SPLIT_REGEX = Regex("[^0-9a-zA-zуУкКеЕнНхХіІвВаАрРоОсСмМтТ]")
 
         private const val CYRILLIC_CHARS = "АВЕІКМНОРСТУХ"
         private const val LATIN_CHARS = "ABEIKMHOPCTYX"
@@ -138,6 +143,25 @@ private fun matchParts(desiredPart: String, obtainedPart: String, reverse: Boole
 
 private val String.containsOnlyNumbers: Boolean
     get() = this.indexOfFirst { !it.isDigit() } == -1
+
+private fun String.containsSequentalNumbers(count: Int): Boolean {
+    var result = false
+    var numbers = 0
+
+    for (char in this) {
+        if (char.isDigit()) {
+            if (++numbers >= count) {
+                result = true;
+                break
+            }
+        } else {
+            numbers = 0
+        }
+    }
+
+    return result
+}
+
 
 private inline fun<T> Iterable<T>.indexOfMaximum(matcher: (T) -> Int): Int {
     var max = Int.MIN_VALUE
