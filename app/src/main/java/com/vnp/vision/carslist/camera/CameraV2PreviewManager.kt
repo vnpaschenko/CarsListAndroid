@@ -94,9 +94,8 @@ internal class CameraV2PreviewManager(context: Context, settings: CameraPreviewS
 
             val map = characteristics.get(
                     CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: continue
-
-            selectedPreviewSize = getBestPreviewSize(map.getOutputSizes(ImageFormat.YUV_420_888)) ?:
-                    continue
+            val supportedSizes = map.getOutputSizes(ImageFormat.YUV_420_888)
+            selectedPreviewSize = getBestPreviewSize(supportedSizes) ?: continue
 
             // Check if the flash is supported.
             isFlashSupported =
@@ -150,9 +149,21 @@ internal class CameraV2PreviewManager(context: Context, settings: CameraPreviewS
 
     private fun getBestPreviewSize(supportedSizes: Array<Size>?): Size? {
 
-        return supportedSizes?.asList()?.sortedByDescending { it.width * it.height }?.first {
-            it.width * it.height <= mSettings.maxPreviewSize
+        // Some devices support panorama resolutions (such as 1280x400). Those resolutions
+        // are not quite suitable for us, so try to avoid using them
+        fun Size.isPanorama(): Boolean {
+            val ratio = width.toFloat() / height
+            return (ratio > 2.0f) or (ratio < 0.5f)
         }
+
+        val result = supportedSizes?.asSequence()?.filter { !it.isPanorama() }
+            ?.sortedByDescending {it.width * it.height}
+            ?.first{it.width * it.height <= mSettings.maxPreviewSize}
+
+        return result ?: supportedSizes?.asSequence()
+                ?.sortedByDescending {it.width * it.height}
+                ?.first{it.width * it.height <= mSettings.maxPreviewSize}
+
     }
 
     @MainThread
@@ -552,6 +563,9 @@ internal class CameraV2PreviewManager(context: Context, settings: CameraPreviewS
 //            img.compressToJpeg(Rect(0, 0, image.width, image.height), 100, out)
 //            val imageBytes = out.toByteArray()
 //            val image_ = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+//
+//            val image2 = image_.copy(Bitmap.Config.ARGB_8888, true)
+
 
             mFrameProcessor.process(data, Size(image.width, image.height), ImageFormat.NV21,
                     frameRotation)
