@@ -27,7 +27,7 @@ const val SHARED_PREFS_NAME = "CarsListPrefs"
 /**
  * Represents text detection
  */
-class Detection(val text: String, val boundingBox: Rect?) {}
+class Detection(val text: String, val boundingBox: Rect?)
 
 /**
  * Fragment that shows preview and deals with camera manager
@@ -102,7 +102,7 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
     override fun onAttach(context: Context?) {
         super.onAttach(context)
 
-        val settings = CameraPreviewSettings(ImageFormat.NV21, 1024 * 768) // 1280x720?
+        val settings = CameraPreviewSettings(ImageFormat.NV21, 1280 * 720) // 1280x720?  1024x 768
         // Initialize the preview manager
         if (mPreviewManager == null) {
             mPreviewManager = CameraPreviewManager.newPreviewManager(context!!.applicationContext,
@@ -227,8 +227,8 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
         val listener = NumberCapturePresenter(context!!, this)
 
         try {
-            mPreviewManager?.start(context!!, mFlashIsOn, mTextureView, listener,
-            { previewSize, flashStatus ->
+            mPreviewManager?.start(context!!, mFlashIsOn, mTextureView, listener) {
+                previewSize, flashStatus ->
 
                 if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
                     mTextureView.setAspectRatio(previewSize.width, previewSize.height)
@@ -248,7 +248,7 @@ class CarNumberCaptureFragment: Fragment(), TextureView.SurfaceTextureListener,
 
                 mOverlay.previewSize = previewSize
 
-            })
+            }
         } catch (e: Throwable) {
 
             listener.onCameraPreviewError(e)
